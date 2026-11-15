@@ -52,7 +52,9 @@ nitrolite tray    # tray icon — prompts for UAC
 ```
 
 Both self-elevate, so run them from any shell, or use the Desktop / Start Menu
-shortcuts. One-shot commands (`mode`, `temp`, `status`, `fans`) do **not**
+shortcuts. Launched from a shortcut the tray detaches from its console, so no
+stray command window is left behind; started from a terminal it keeps the
+console so its output stays visible. One-shot commands (`mode`, `temp`, `status`, `fans`) do **not**
 self-elevate — an elevated child gets its own console and its output would
 vanish — so run those from an elevated terminal.
 
@@ -173,6 +175,7 @@ tools/make_icon.py  regenerates assets/nitrolite.ico
 ## License
 
 MIT
+
 
 
 
