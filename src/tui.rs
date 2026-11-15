@@ -45,6 +45,9 @@ const BASE_ROTATION: f32 = 0.11;
 /// GPU fan is phase-shifted so the two do not look mechanically locked.
 const GPU_PHASE_OFFSET: f32 = 1.7;
 
+/// One rendered fan: rows of (glyph, is_led_ring) cells.
+type FanGrid = Vec<Vec<(char, bool)>>;
+
 /// Below these dimensions the full dashboard will not fit and we fall back.
 const MIN_DASH_W: usize = 92;
 const MIN_DASH_H: usize = 24;
@@ -177,7 +180,7 @@ fn sparkline(history: &VecDeque<f64>, width: usize, style: &str) -> (String, usi
 // -------------------------------------------------------------------- fans
 
 /// Render one fan into braille cells. Second element marks LED-ring cells.
-fn fan_grid(phase: f32) -> Vec<Vec<(char, bool)>> {
+fn fan_grid(phase: f32) -> FanGrid {
     let unicode = UNICODE_BOX.load(Ordering::Relaxed);
     let w = FAN_COLS * 2;
     let h = FAN_ROWS * 4;
@@ -409,7 +412,13 @@ fn level_bar(label: &str, pct: Option<f32>, width: usize, style: &str) -> Line {
 
 // --------------------------------------------------------------- rendering
 
-fn dashboard(data: &Data, w: usize, h: usize, phase: f32) -> Vec<String> {
+fn dashboard(
+    data: &Data,
+    w: usize,
+    h: usize,
+    cpu_fan: &[Vec<(char, bool)>],
+    gpu_fan: &[Vec<(char, bool)>],
+) -> Vec<String> {
     let inner = w.saturating_sub(2);
     let gap = 1usize;
 
@@ -485,8 +494,6 @@ fn dashboard(data: &Data, w: usize, h: usize, phase: f32) -> Vec<String> {
 
     // Cooling panel ---------------------------------------------------
     let led = led_style(data.mode);
-    let cpu_fan = fan_grid(phase);
-    let gpu_fan = fan_grid(phase + GPU_PHASE_OFFSET);
     let mut cooling_body: Vec<Line> = Vec::new();
 
     for r in 0..FAN_ROWS {
@@ -688,15 +695,20 @@ fn frame(mut body: Vec<Line>, w: usize, h: usize, data: &Data) -> Vec<String> {
     out
 }
 
-fn draw(out: &mut impl Write, data: &Data, phase: f32) -> io::Result<()> {
+fn draw(
+    out: &mut impl Write,
+    data: &Data,
+    cpu_fan: &[Vec<(char, bool)>],
+    gpu_fan: &[Vec<(char, bool)>],
+) -> io::Result<()> {
     let (cols, rows) = crossterm::terminal::size().unwrap_or((100, 30));
     let w = (cols as usize).max(MIN_DASH_W);
     let h = rows as usize;
 
     let lines = if w >= MIN_DASH_W && h >= MIN_DASH_H {
-        dashboard(data, w, h, phase)
+        dashboard(data, w, h, cpu_fan, gpu_fan)
     } else {
-        compact(data, phase)
+        compact(data, cpu_fan, gpu_fan)
     };
 
     queue!(out, MoveTo(0, 0))?;
@@ -712,7 +724,11 @@ fn draw(out: &mut impl Write, data: &Data, phase: f32) -> io::Result<()> {
 }
 
 /// Fallback for terminals too small for the dashboard.
-fn compact(data: &Data, phase: f32) -> Vec<String> {
+fn compact(
+    data: &Data,
+    cpu_fan: &[Vec<(char, bool)>],
+    gpu_fan: &[Vec<(char, bool)>],
+) -> Vec<String> {
     let w = 46usize;
     let inner = w - 2;
     let mut out = Vec::new();
@@ -721,8 +737,6 @@ fn compact(data: &Data, phase: f32) -> Vec<String> {
     let title = " nitrolite";
     out.push(format!("│{:<inner$}│", title));
 
-    let cpu_fan = fan_grid(phase);
-    let gpu_fan = fan_grid(phase + GPU_PHASE_OFFSET);
     for r in 0..3 {
         let left = paint_cells(&cpu_fan[r], led_style(data.mode));
         let right = paint_cells(&gpu_fan[r], led_style(data.mode));
@@ -789,7 +803,9 @@ pub fn run_once(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
     let _ = meter.sample();
     let data = collect(None, wmi, nvml, &mut meter);
     let mut out = io::stdout();
-    for line in dashboard(&data, 118, 32, 0.0) {
+    let cpu_fan = fan_grid(0.0);
+    let gpu_fan = fan_grid(GPU_PHASE_OFFSET);
+    for line in dashboard(&data, 118, 32, &cpu_fan, &gpu_fan) {
         writeln!(out, "{line}").map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -842,18 +858,29 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
     let mut meter = SysMeter::new();
     let _ = meter.sample();
     let mut data = collect(None, wmi, nvml, &mut meter);
+
     let mut phase: f32 = 0.0;
     let mut pending: Option<Pending> = None;
+    let mut dirty = true;
 
-    let tick = if animating {
-        Duration::from_millis(80)
-    } else {
-        Duration::from_millis(250)
-    };
+    // Frame skipping: in slower modes many animation ticks quantise to the same
+    // braille frame, and redrawing identical pixels is pure CPU.
+    let mut previous: Option<(FanGrid, FanGrid)> = None;
     let mut last_refresh = Instant::now();
 
     loop {
-        draw(&mut out, &data, phase).map_err(|e| e.to_string())?;
+        let cpu_fan = fan_grid(phase);
+        let gpu_fan = fan_grid(phase + GPU_PHASE_OFFSET);
+
+        let changed = match &previous {
+            Some((c, g)) => *c != cpu_fan || *g != gpu_fan,
+            None => true,
+        };
+        if changed || dirty {
+            draw(&mut out, &data, &cpu_fan, &gpu_fan).map_err(|e| e.to_string())?;
+            previous = Some((cpu_fan, gpu_fan));
+            dirty = false;
+        }
 
         if animating {
             phase = (phase + BASE_ROTATION * rotation_factor(data.mode)) % std::f32::consts::TAU;
@@ -867,12 +894,27 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
                     } else {
                         format!("mode change to {} failed", mode_name(p.target))
                     };
+                    dirty = true;
                     last_refresh = Instant::now() - Duration::from_secs(5);
                 }
                 Ok(None) => pending = Some(p),
-                Err(e) => data.status = format!("mode change error: {e}"),
+                Err(e) => {
+                    data.status = format!("mode change error: {e}");
+                    dirty = true;
+                }
             }
         }
+
+        // Faster modes tick faster; quiet needs only a few frames a second.
+        let tick = if !animating {
+            Duration::from_millis(500)
+        } else {
+            match rotation_factor(data.mode) {
+                f if f >= 0.9 => Duration::from_millis(80),
+                f if f >= 0.4 => Duration::from_millis(160),
+                _ => Duration::from_millis(300),
+            }
+        };
 
         if poll(tick).map_err(|e| e.to_string())? {
             if let Event::Key(KeyEvent {
@@ -901,10 +943,12 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
                                 Err(e) => data.status = e,
                             }
                         }
+                        dirty = true;
                     }
                     KeyCode::Char('r') => {
                         last_refresh = Instant::now() - Duration::from_secs(5);
                         data.status = "refreshed".to_string();
+                        dirty = true;
                     }
                     _ => {}
                 }
@@ -916,13 +960,24 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
             data = collect(Some(&data), wmi, nvml, &mut meter);
             data.status = status;
             last_refresh = Instant::now();
+            dirty = true;
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Test helper: build a frame at a given animation phase.
+    fn frame_at(data: &Data, w: usize, h: usize, phase: f32) -> Vec<String> {
+        dashboard(
+            data,
+            w,
+            h,
+            &fan_grid(phase),
+            &fan_grid(phase + GPU_PHASE_OFFSET),
+        )
+    }
 
     fn sample_data() -> Data {
         Data {
@@ -1010,7 +1065,7 @@ mod tests {
     fn dashboard_fills_the_requested_width() {
         let data = sample_data();
         for w in [MIN_DASH_W, 100, 120, 160] {
-            let lines = dashboard(&data, w, 32, 0.0);
+            let lines = frame_at(&data, w, 32, 0.0);
             let plain: Vec<String> = lines
                 .iter()
                 .map(|l| l.replace('\x1b', "").to_string())
@@ -1026,7 +1081,7 @@ mod tests {
     #[test]
     fn dashboard_respects_height() {
         let data = sample_data();
-        let lines = dashboard(&data, 118, 30, 0.0);
+        let lines = frame_at(&data, 118, 30, 0.0);
         assert!(
             lines.len() <= 30,
             "frame taller than terminal: {}",
@@ -1038,7 +1093,7 @@ mod tests {
     fn frame_never_mentions_rpm() {
         let data = sample_data();
         for w in [MIN_DASH_W, 118] {
-            let frame = dashboard(&data, w, 32, 0.3).join("\n").to_lowercase();
+            let frame = frame_at(&data, w, 32, 0.3).join("\n").to_lowercase();
             assert!(
                 !frame.contains("rpm"),
                 "fan RPM must never be displayed: the number would be fabricated"
@@ -1051,7 +1106,7 @@ mod tests {
         let mut data = sample_data();
         for (value, expected) in [(0u8, "Quiet"), (1, "Balanced"), (4, "Performance")] {
             data.mode = value;
-            let frame = dashboard(&data, 118, 32, 0.0).join("\n");
+            let frame = frame_at(&data, 118, 32, 0.0).join("\n");
             assert!(
                 frame.contains(&format!("Mode: {expected}")),
                 "missing {expected}"
