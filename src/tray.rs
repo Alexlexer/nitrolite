@@ -305,4 +305,3 @@ pub fn run(instance: &str) -> Result<(), String> {
 
     Ok(())
 }
-
