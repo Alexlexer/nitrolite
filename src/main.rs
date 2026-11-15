@@ -1,6 +1,7 @@
 mod acer;
 mod calib;
 mod elevate;
+mod monitor;
 mod nvml;
 mod power;
 mod sysinfo;
@@ -56,6 +57,33 @@ fn main() {
         if let Err(e) = calib::analyze(path) {
             eprintln!("error: {e}");
             std::process::exit(1);
+        }
+        return;
+    }
+
+    // `fans` talks to the Acer monitor service over localhost: no WMI, no
+    // elevation, and it is the only source of real fan RPM.
+    if cmd == "fans" {
+        match crate::monitor::read() {
+            Some(m) => {
+                let fmt = |v: Option<u32>| {
+                    v.map(|r| format!("{r} RPM"))
+                        .unwrap_or_else(|| "n/a".into())
+                };
+                println!("CPU fan : {}", fmt(m.cpu_fan_rpm));
+                println!("GPU fan : {}", fmt(m.gpu_fan_rpm));
+                println!("SYS fan : {}", fmt(m.sys_fan_rpm));
+                if let Some(t) = m.cpu_temp_c {
+                    println!("CPU temp (service): {t:.0} C");
+                }
+                if let Some(t) = m.gpu_temp_c {
+                    println!("GPU temp (service): {t:.0} C");
+                }
+            }
+            None => {
+                eprintln!("monitor service unavailable — is the Acer service stack running?");
+                std::process::exit(1);
+            }
         }
         return;
     }

@@ -337,36 +337,70 @@ The Store app is a **client** of the interface we talk to, not a provider of it.
 Uninstalling NitroSense cannot remove a firmware ACPI device; uninstalling the
 Acer *drivers* might.
 
-## 11. Where fan speed lives — and why we cannot read it
+## 11. Fan speed — solved
 
-Earlier notes said fan RPM was "not exposed". That was imprecise. It exists, just
-not on the interface we own.
+Earlier revisions of this document concluded fan RPM was unreachable. That was
+wrong, and the correction matters more than the original claim.
 
-**It exists here** — `AcerSysMonitorService.exe` (service `ASMSvc` →
-`AcerSystemCentralService.exe` → `AcerSysMonitorService.exe`) contains:
+### The interface
 
+`AcerSysMonitorService` (service `ASMSvc` → `AcerSystemCentralService.exe` →
+`AcerSysMonitorService.exe`) listens on **TCP 46753** and speaks a framed
+request/response protocol. The client code was recovered from NitroSense's
+`app.asar` (`PSSdkAdapter.sendRequest`):
+
+```text
+"ACER"                 4 bytes ASCII magic
+uint32 little-endian   command id
+UTF-8 JSON             request payload
 ```
-CPU_FANSPEED  GPU1_FANSPEED  GPU2_FANSPEED  SYS1_FANSPEED  SYS2_FANSPEED
-PSSocket::Get_CPU_FanSpeed   PSSocket::Get_GPU_FanSpeed   PSSocket::Get_SYS1_FanSpeed
-```
 
-**Transport, investigated:**
+Command ids (`PacketID` in the client):
 
-| Path | Result |
+| Id | Command |
 |---|---|
-| WebSocket on `ws://127.0.0.1:46760` | handshake succeeds (state `Open`), replies `{"result":"3"}` to every payload tried |
-| Raw TCP on `127.0.0.1:46753` | replies JSON (not HTTP) to any input; same `result:3` |
-| Command shapes tried | HTTP GET, `{"command_id":"GET_MONITOR_DATA"}`, `INITIALIZATION`, `GET_UPDATED_DATA`, `{"command":...}`, `{"cmd":...}` |
-| Crypto | binary embeds **CryptoPP with Rijndael/ECB** — payloads are almost certainly encrypted with an embedded key, which would explain `result:3` for every plaintext attempt |
-| Named pipe `\\.\pipe\predatorsense_hardware_service_` | live, plaintext command codes (`kSvcCmd*`), but its only fan command is `kSvcCmdWMIGetGamingFanGroupSpeed`, which maps back to the constant WMI value `100` |
-| EC as HID | no such device — only `Acer Airplane Mode Controller` (ACPI\10251229), unrelated |
-| `APGeAction.GetFunction(0x03/0x04)` | `0x11C000` / `0x1E0F00` — constant across a 70 s load cycle, so capability/threshold values, not tachometer |
+| 0 | `INITIALIZATION` |
+| 10 | `GET_MONITOR_DATA` |
+| 20 | `GET_UPDATED_DATA` |
+| 30 | `GET_CONNECTED_DEVICE` |
+| 40 | `GET_LIGHTING_EFFECT_CAPABILITY` |
+| 100 | `SET_DEVICE_DATA` |
 
-**Conclusion:** reading live fan RPM requires either reversing the encrypted
-WebSocket protocol of `AcerSysMonitorService`, or EC access through a kernel
-driver (WinRing0-style; risky and blocked by HVCI on current Windows). Neither is
-a small, safe addition — both conflict with the "don't become NitroSense" goal.
+`GET_MONITOR_DATA` takes `{}` and returns, verbatim from this machine:
 
-What *is* available read-only: `GetGamingFanSpeed(1|4)` returns `100`, a level or
-percentage-style value, constant in all tests.
+```json
+{ "data": {
+    "CPU_FANSPEED": 4464, "GPU1_FANSPEED": 3993, "SYS1_FANSPEED": 4445,
+    "CPU_TEMPERATURE": 79, "GPU1_TEMPERATURE": 82,
+    "CPU_USAGE": 16.36, "GPU1_USAGE": 80, "RAM_USAGE": 73.8 },
+  "request": "GET_MONITOR_DATA", "result": "0" }
+```
 
+`result` is `"0"` on success; anything else is a failure and must not be read as
+a zero.
+
+### Encryption is conditional
+
+The client enables AES-256-ECB only when
+`HKLM\SOFTWARE\OEM\AcerAgentService\SupportAES` is non-zero, taking the key from
+the `AESkey` value (32 characters) beside it. Neither value exists on this
+machine, so frames are plaintext. The `1234567812345678` AES-128 string in the
+service binary is a default constant, not the key in use.
+
+`AESkey`/`SupportAES` live under **AcerAgentService**, not AcerSysMonitorService.
+
+### What this changes
+
+`nitrolite` no longer guesses or decorates fan speed: `nitrolite fans`, the TUI
+cooling panel and the tray tooltip all show measured RPM from this service. The
+fan *animation* remains decorative and mode-driven; only the numbers are real.
+
+The service answers in ~700 ms, so it is polled on a background thread and the
+UI reads the latest snapshot — otherwise the render loop would stall.
+
+### Why the earlier investigation missed it
+
+Three dead ends were explored first: the ACPI `GetGamingFanSpeed` (constant), the
+NVML `fan.speed` (N/A on laptop GPUs), and `ws://127.0.0.1:46760` (a WebSocket
+that answers `{"result":"3"}` to plaintext because it is a *different* surface —
+the working protocol is the raw socket on 46753).

@@ -43,6 +43,8 @@ static mut ICON_DATA: Option<NOTIFYICONDATAW> = None;
 static mut LAST_AC: Option<bool> = None;
 /// The mode to return to when AC power comes back.
 static mut PREFERRED_MODE: u8 = 1;
+/// Latest monitor snapshot, refreshed by a background thread.
+static mut FANS: Option<std::sync::Arc<std::sync::Mutex<Option<crate::monitor::Monitor>>>> = None;
 
 fn mode_name(value: u8) -> &'static str {
     match value {
@@ -110,12 +112,27 @@ unsafe fn update_tooltip(hwnd: HWND) {
     if let Some(wmi) = (*std::ptr::addr_of!(WMI)).as_ref() {
         follow_power_source(wmi, mode);
     }
+    // Real fan speeds, published by the background poller.
+    let fans = (*std::ptr::addr_of!(FANS))
+        .as_ref()
+        .and_then(|slot| slot.lock().ok())
+        .and_then(|guard| guard.clone());
+    let fan_text = match fans.as_ref().and_then(|m| m.cpu_fan_rpm) {
+        Some(rpm) => format!(" | {rpm} rpm"),
+        None => String::new(),
+    };
+
     let tip = format!(
-        "nitrolite — {} | CPU {} | GPU {}",
+        "nitrolite — {} | CPU {}{} | GPU {}{}",
         mode_name(mode),
         cpu.map(|t| format!("{t:.0}C"))
             .unwrap_or_else(|| "n/a".into()),
-        gpu.map(|t| format!("{t}C")).unwrap_or_else(|| "n/a".into())
+        fan_text,
+        gpu.map(|t| format!("{t}C")).unwrap_or_else(|| "n/a".into()),
+        match fans.as_ref().and_then(|m| m.gpu_fan_rpm) {
+            Some(rpm) => format!(" / {rpm} rpm"),
+            None => String::new(),
+        },
     );
 
     if let Some(nid) = (*std::ptr::addr_of_mut!(ICON_DATA)).as_mut() {
@@ -287,6 +304,7 @@ pub fn run(instance: &str) -> Result<(), String> {
             }
         }
         LAST_AC = wmi.power_online();
+        FANS = Some(crate::monitor::shared(std::time::Duration::from_secs(2)));
         WMI = Some(wmi);
         NVML = Nvml::load().ok();
     }

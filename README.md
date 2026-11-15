@@ -32,10 +32,12 @@ dependency, verified against hardware:
 - ~22.8 MB private, ~0.3% of one core, versus NitroSense's ~600 MB across five
   processes
 
-**Fan RPM is not readable on this hardware** — the data exists in an Acer service,
-but its transport is encrypted ([docs/PROTOCOL.md §11](docs/PROTOCOL.md)). The
-fans drawn in the UI are decoration driven by the selected mode, and no RPM figure
-is ever displayed.
+**Fan RPM is now read for real.** The earlier conclusion that it was unreadable
+was wrong: `AcerSysMonitorService` exposes `CPU_FANSPEED`, `GPU1_FANSPEED` and
+`SYS1_FANSPEED` over a small `ACER`-framed JSON protocol on localhost:46753
+([docs/PROTOCOL.md §11](docs/PROTOCOL.md)). `nitrolite fans`, the dashboard and
+the tray tooltip all show measured speeds. The fan *animation* stays decorative
+and mode-driven — only the numbers are real.
 
 See [docs/PLAN.md](docs/PLAN.md) for what is left and why.
 
@@ -159,6 +161,7 @@ docs/PROTOCOL.md  reverse-engineered protocol + captured samples
 ## License
 
 MIT
+
 
 
 

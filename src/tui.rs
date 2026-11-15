@@ -269,6 +269,8 @@ fn paint_cells(cells: &[(char, bool)], led: &'static str) -> String {
 
 struct Data {
     mode: u8,
+    /// Real fan speeds, when the Acer monitor service is reachable.
+    monitor: Option<crate::monitor::Monitor>,
     /// `Some(false)` while running on battery, where ECO is a real choice.
     on_ac: Option<bool>,
     cpu_temp: Option<f64>,
@@ -322,6 +324,7 @@ fn collect(
 
     Data {
         mode,
+        monitor: None, // filled from the background poller by the caller
         on_ac: wmi.power_online(),
         cpu_temp,
         gpu,
@@ -513,6 +516,23 @@ fn dashboard(
         width = FAN_COLS
     );
     cooling_body.push((paint(&[(labels.as_str(), DIM)]), labels.chars().count()));
+    let rpm_line = match &data.monitor {
+        Some(m) => format!(
+            "CPU {}   GPU {} RPM",
+            m.cpu_fan_rpm
+                .map(|r| r.to_string())
+                .unwrap_or_else(|| "--".into()),
+            m.gpu_fan_rpm
+                .map(|r| r.to_string())
+                .unwrap_or_else(|| "--".into()),
+        ),
+        None => "fans: service unavailable".to_string(),
+    };
+    cooling_body.push((
+        paint(&[(rpm_line.as_str(), "1;91")]),
+        rpm_line.chars().count(),
+    ));
+
     let caption = format!("Mode: {}", mode_name(data.mode));
     let cap_pad = cooling_w.saturating_sub(caption.chars().count() + 2) / 2;
     let cap_line = format!("{}{}", " ".repeat(cap_pad), caption);
@@ -812,7 +832,10 @@ pub fn run_once(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
     init_console();
     let mut meter = SysMeter::new();
     let _ = meter.sample();
-    let data = collect(None, wmi, nvml, &mut meter);
+    let mut data = collect(None, wmi, nvml, &mut meter);
+    // One-shot render: read the fans synchronously (the service takes ~700 ms).
+    data.monitor = crate::monitor::read();
+
     let mut out = io::stdout();
     let cpu_fan = fan_grid(0.0);
     let gpu_fan = fan_grid(GPU_PHASE_OFFSET);
@@ -868,7 +891,9 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
 
     let mut meter = SysMeter::new();
     let _ = meter.sample();
+    let fans = crate::monitor::shared(Duration::from_secs(2));
     let mut data = collect(None, wmi, nvml, &mut meter);
+    data.monitor = fans.lock().ok().and_then(|g| g.clone());
 
     let mut phase: f32 = 0.0;
     let mut pending: Option<Pending> = None;
@@ -983,6 +1008,7 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
         if last_refresh.elapsed() >= Duration::from_secs(1) {
             let status = std::mem::take(&mut data.status);
             data = collect(Some(&data), wmi, nvml, &mut meter);
+            data.monitor = fans.lock().ok().and_then(|g| g.clone());
             data.status = status;
 
             if let Some(on_ac) = wmi.power_online() {
@@ -1026,6 +1052,13 @@ mod tests {
     fn sample_data() -> Data {
         Data {
             mode: 1,
+            monitor: Some(crate::monitor::Monitor {
+                cpu_fan_rpm: Some(4000),
+                gpu_fan_rpm: Some(3500),
+                sys_fan_rpm: Some(3900),
+                cpu_temp_c: Some(61.0),
+                gpu_temp_c: Some(55.0),
+            }),
             on_ac: Some(true),
             cpu_temp: Some(61.5),
             gpu: None,
@@ -1152,18 +1185,29 @@ mod tests {
         );
     }
 
+    /// RPM is shown only when the monitor service supplied it. The old rule was
+    /// "never show RPM" because the number would have been invented; now it is
+    /// real, so the rule is "never show a made-up number".
     #[test]
-    fn frame_never_mentions_rpm() {
+    fn real_rpm_is_displayed_when_the_service_supplies_it() {
         let data = sample_data();
-        for w in [MIN_DASH_W, 118] {
-            let frame = frame_at(&data, w, 32, 0.3).join("\n").to_lowercase();
-            assert!(
-                !frame.contains("rpm"),
-                "fan RPM must never be displayed: the number would be fabricated"
-            );
-        }
+        let frame = frame_at(&data, 118, 32, 0.0).join("\n");
+        assert!(frame.contains("4000"), "CPU fan RPM missing: {frame}");
+        assert!(frame.contains("3500"), "GPU fan RPM missing: {frame}");
     }
 
+    #[test]
+    fn no_rpm_is_invented_when_the_service_is_unavailable() {
+        let mut data = sample_data();
+        data.monitor = None;
+        let frame = frame_at(&data, 118, 32, 0.0).join("\n");
+        assert!(
+            frame.contains("service unavailable"),
+            "expected an explicit unavailable marker"
+        );
+        // No bare four-digit number that could be mistaken for a fan reading.
+        assert!(!frame.contains("4000") && !frame.contains("3500"));
+    }
     #[test]
     fn frame_shows_the_active_mode() {
         let mut data = sample_data();
