@@ -41,7 +41,7 @@ const HISTORY_LEN: usize = 60;
 const FAN_COLS: usize = 13;
 const FAN_ROWS: usize = 5;
 /// Radians per animation tick at 100% speed.
-const BASE_ROTATION: f32 = 0.11;
+const BASE_ROTATION: f32 = 0.18;
 /// GPU fan is phase-shifted so the two do not look mechanically locked.
 const GPU_PHASE_OFFSET: f32 = 1.7;
 
@@ -901,7 +901,7 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
 
     let mut meter = SysMeter::new();
     let _ = meter.sample();
-    let fans = crate::monitor::shared(Duration::from_secs(2));
+    let fans = crate::monitor::shared(Duration::from_secs(1));
     let mut data = collect(None, wmi, nvml, &mut meter);
     data.monitor = fans.lock().ok().and_then(|g| g.clone());
 
@@ -1020,7 +1020,7 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
             }
         }
 
-        if last_refresh.elapsed() >= Duration::from_secs(1) {
+        if last_refresh.elapsed() >= Duration::from_millis(500) {
             let status = std::mem::take(&mut data.status);
             data = collect(Some(&data), wmi, nvml, &mut meter);
             data.monitor = fans.lock().ok().and_then(|g| g.clone());

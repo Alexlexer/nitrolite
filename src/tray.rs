@@ -304,7 +304,7 @@ pub fn run(instance: &str) -> Result<(), String> {
             }
         }
         LAST_AC = wmi.power_online();
-        FANS = Some(crate::monitor::shared(std::time::Duration::from_secs(2)));
+        FANS = Some(crate::monitor::shared(std::time::Duration::from_secs(1)));
         WMI = Some(wmi);
         NVML = Nvml::load().ok();
     }
@@ -364,7 +364,7 @@ pub fn run(instance: &str) -> Result<(), String> {
         }
 
         update_tooltip(hwnd);
-        SetTimer(hwnd, TIMER_ID, 2000, None);
+        SetTimer(hwnd, TIMER_ID, 1000, None);
 
         println!("tray running — right-click the icon for modes, Exit to quit");
 
