@@ -282,7 +282,30 @@ extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM
 }
 
 /// Entry point. Returns only when the user picks Exit (or the loop dies).
+/// Detach from the console when this process *owns* it.
+///
+/// `nitrolite.exe` is a console-subsystem binary because the CLI commands need
+/// stdout. Launched from a shortcut or Explorer, Windows therefore creates a
+/// console window just for the tray, which then sits there doing nothing.
+///
+/// `GetConsoleProcessList` tells us whether the console is shared: if we are the
+/// only process attached, it was created for us and can be dropped. If a
+/// terminal is attached as well, we are running inside someone's shell and must
+/// leave it alone.
+fn detach_owned_console() {
+    use windows::Win32::System::Console::{FreeConsole, GetConsoleProcessList};
+
+    unsafe {
+        let mut pids = [0u32; 8];
+        let attached = GetConsoleProcessList(&mut pids);
+        if attached == 1 {
+            let _ = FreeConsole();
+        }
+    }
+}
 pub fn run(instance: &str) -> Result<(), String> {
+    // Before touching stdout: a shortcut launch should not leave a console up.
+    detach_owned_console();
     let wmi = AcerWmi::connect(instance)?;
 
     // Fail fast if we are not elevated: the ACPI instance is admin-only.
