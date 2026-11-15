@@ -15,7 +15,7 @@ nitrolite       ─────────────────────�
 
 ## Status
 
-**v0.2.0 — a working replacement.** Direct ACPI/WMI access with no NitroSense
+**v0.2.1 — a working replacement.** Direct ACPI/WMI access with no NitroSense
 dependency, verified against hardware:
 
 - operating mode: read *and* write, with read-back verification and automatic
@@ -159,6 +159,7 @@ docs/PROTOCOL.md  reverse-engineered protocol + captured samples
 ## License
 
 MIT
+
 
 
 
