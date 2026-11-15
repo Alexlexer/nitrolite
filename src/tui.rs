@@ -269,6 +269,8 @@ fn paint_cells(cells: &[(char, bool)], led: &'static str) -> String {
 
 struct Data {
     mode: u8,
+    /// `Some(false)` while running on battery, where ECO is a real choice.
+    on_ac: Option<bool>,
     cpu_temp: Option<f64>,
     gpu: Option<GpuInfo>,
     gpu_name: String,
@@ -320,6 +322,7 @@ fn collect(
 
     Data {
         mode,
+        on_ac: wmi.power_online(),
         cpu_temp,
         gpu,
         gpu_name,
@@ -604,7 +607,11 @@ fn dashboard(
     let chart = panel("Temperatures", chart_body, inner, DIM);
 
     // Modes ------------------------------------------------------------
-    let modes = "  [1] Quiet      [2] Balanced      [3] Performance      [r] refresh      [q] quit";
+    let modes = if data.on_ac == Some(false) {
+        "  [1] Quiet   [2] Balanced   [3] Performance   [4] ECO      [r] refresh   [q] quit"
+    } else {
+        "  [1] Quiet   [2] Balanced   [3] Performance              [r] refresh   [q] quit"
+    };
     let modes_body = vec![(paint(&[(modes, "37")]), modes.chars().count())];
     let modes_panel = panel("Keys", modes_body, inner, RED);
 
@@ -758,7 +765,11 @@ fn compact(
     out.push(format!("│{:<inner$}│", cpu));
     out.push(format!(
         "│{:<inner$}│",
-        " [1] Quiet  [2] Balanced  [3] Performance"
+        if data.on_ac == Some(false) {
+            " [1] Quiet [2] Balanced [3] Performance [4] ECO"
+        } else {
+            " [1] Quiet [2] Balanced [3] Performance"
+        }
     ));
     out.push(format!("│{:<inner$}│", " [q] quit"));
     out.push(format!("└{}┘", repeat('─', inner)));
@@ -934,12 +945,18 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
                         return Ok(())
                     }
-                    KeyCode::Char(c @ ('1' | '2' | '3')) => {
+                    KeyCode::Char(c @ ('1' | '2' | '3' | '4')) => {
                         let value = match c {
                             '1' => 0u8,
                             '2' => 1,
-                            _ => 4,
+                            '3' => 4,
+                            _ => crate::power::ECO,
                         };
+                        if value == crate::power::ECO && data.on_ac != Some(false) {
+                            data.status = "ECO is only available on battery".to_string();
+                            dirty = true;
+                            continue;
+                        }
                         if pending.is_some() {
                             data.status = "mode change already in flight".to_string();
                         } else {
@@ -1009,6 +1026,7 @@ mod tests {
     fn sample_data() -> Data {
         Data {
             mode: 1,
+            on_ac: Some(true),
             cpu_temp: Some(61.5),
             gpu: None,
             gpu_name: "Test GPU".to_string(),
@@ -1113,6 +1131,24 @@ mod tests {
             lines.len() <= 30,
             "frame taller than terminal: {}",
             lines.len()
+        );
+    }
+
+    #[test]
+    fn eco_is_offered_only_on_battery() {
+        let mut data = sample_data();
+        data.on_ac = Some(true);
+        let ac_frame = frame_at(&data, 118, 32, 0.0).join("\n");
+        assert!(
+            !ac_frame.contains("[4] ECO"),
+            "ECO must not be offered while on AC"
+        );
+
+        data.on_ac = Some(false);
+        let battery_frame = frame_at(&data, 118, 32, 0.0).join("\n");
+        assert!(
+            battery_frame.contains("[4] ECO"),
+            "ECO must be selectable on battery"
         );
     }
 

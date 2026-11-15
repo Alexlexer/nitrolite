@@ -346,6 +346,9 @@ fn variant_to_u64(v: &VARIANT) -> Option<u64> {
         }
 
         match vt {
+            // VT_BOOL. `PowerOnline` arrives this way; without this arm the
+            // AC/DC follow silently sees `None` and never switches mode.
+            11 => Some((raw.Anonymous.Anonymous.Anonymous.boolVal != 0) as u64),
             2 => Some(raw.Anonymous.Anonymous.Anonymous.iVal as u64),
             3 => Some(raw.Anonymous.Anonymous.Anonymous.lVal as u64),
             18 => Some(raw.Anonymous.Anonymous.Anonymous.uiVal as u64),
@@ -354,5 +357,24 @@ fn variant_to_u64(v: &VARIANT) -> Option<u64> {
             21 => Some(raw.Anonymous.Anonymous.Anonymous.ullVal),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decodes_variant_bool() {
+        // PowerOnline arrives as VT_BOOL; without this the AC/DC follow silently
+        // sees `None` and never switches mode.
+        assert_eq!(variant_to_u64(&VARIANT::from(true)), Some(1));
+        assert_eq!(variant_to_u64(&VARIANT::from(false)), Some(0));
+    }
+
+    #[test]
+    fn decodes_integer_variants() {
+        assert_eq!(variant_to_u64(&VARIANT::from(42u32)), Some(42));
+        assert_eq!(variant_to_u64(&VARIANT::from(7i32)), Some(7));
     }
 }

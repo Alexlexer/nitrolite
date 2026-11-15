@@ -33,6 +33,7 @@ const TIP_MAX: usize = 128;
 const CMD_QUIET: usize = 100;
 const CMD_BALANCED: usize = 101;
 const CMD_PERFORMANCE: usize = 102;
+const CMD_ECO: usize = 103;
 const CMD_EXIT: usize = 200;
 
 static mut WMI: Option<AcerWmi> = None;
@@ -134,7 +135,10 @@ unsafe fn apply_mode(hwnd: HWND, value: u8) {
     let Some(wmi) = (*std::ptr::addr_of!(WMI)).as_ref() else {
         return;
     };
-    PREFERRED_MODE = value;
+    // ECO is a battery fallback, never a stored preference.
+    if value != crate::power::ECO {
+        PREFERRED_MODE = value;
+    }
     let current = match wmi.get("GetGamingMiscSetting", 0x0B) {
         Ok(raw) => ((raw >> 8) & 0xFF) as u8,
         Err(_) => return,
@@ -176,6 +180,16 @@ unsafe fn show_menu(hwnd: HWND) {
         windows::core::w!("Performance"),
     );
 
+    // ECO only makes sense — and is only offered — on battery.
+    let on_battery = (*std::ptr::addr_of!(WMI))
+        .as_ref()
+        .and_then(|w| w.power_online())
+        .map(|ac| !ac)
+        .unwrap_or(false);
+    if on_battery {
+        let _ = AppendMenuW(menu, MF_STRING, CMD_ECO, windows::core::w!("ECO"));
+    }
+
     let active = match mode_name(mode) {
         "Quiet" => CMD_QUIET,
         "Balanced" => CMD_BALANCED,
@@ -212,6 +226,7 @@ unsafe fn show_menu(hwnd: HWND) {
         CMD_QUIET => apply_mode(hwnd, 0),
         CMD_BALANCED => apply_mode(hwnd, 1),
         CMD_PERFORMANCE => apply_mode(hwnd, 4),
+        CMD_ECO => apply_mode(hwnd, crate::power::ECO),
         CMD_EXIT => {
             let _ = DestroyWindow(hwnd);
         }

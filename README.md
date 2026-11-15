@@ -24,6 +24,8 @@ dependency, verified against hardware:
   clock, power and VRAM from NVML
 - CPU load, memory and disk usage from documented Windows APIs
 - tray icon, and a full-screen TUI dashboard with mode-driven fan animation
+- ECO is selectable while unplugged (`[4]` in the TUI, menu entry in the tray) and is
+  never stored as a preference
 - AC/DC follow: ECO is applied when the charger is removed and your chosen mode
   is restored when it comes back (this logic lived in NitroSense, not the Acer
   service stack)
@@ -157,6 +159,7 @@ docs/PROTOCOL.md  reverse-engineered protocol + captured samples
 ## License
 
 MIT
+
 
 
 
