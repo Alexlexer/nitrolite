@@ -24,8 +24,14 @@ fn filetime_ticks(ft: FILETIME) -> u64 {
 }
 
 /// Keeps the previous CPU sample so load is a delta rather than a lifetime average.
+/// (total GB, free GB, used %) cached between refreshes.
+type DiskSample = Option<(f64, f64, f32)>;
+
 pub struct SysMeter {
     previous: Option<(u64, u64)>, // (busy, total)
+    /// Disk usage changes slowly; re-query it every few seconds rather than
+    /// every UI refresh. RAM stays per-sample because it is a cheap call.
+    disk: Option<(std::time::Instant, DiskSample)>,
 }
 
 impl Default for SysMeter {
@@ -36,7 +42,10 @@ impl Default for SysMeter {
 
 impl SysMeter {
     pub fn new() -> Self {
-        Self { previous: None }
+        Self {
+            previous: None,
+            disk: None,
+        }
     }
 
     pub fn sample(&mut self) -> Gauges {
@@ -72,7 +81,7 @@ impl SysMeter {
         }
     }
 
-    fn static_gauges(&self) -> Gauges {
+    fn static_gauges(&mut self) -> Gauges {
         let mut gauges = Gauges::default();
 
         unsafe {
@@ -88,22 +97,44 @@ impl SysMeter {
                 gauges.ram_used_pct = Some(((total - avail) / total * 100.0) as f32);
             }
 
-            let path: Vec<u16> = "C:\\".encode_utf16().chain(std::iter::once(0)).collect();
-            let (mut free, mut total) = (0u64, 0u64);
-            if GetDiskFreeSpaceExW(
-                PCWSTR(path.as_ptr()),
-                Some(&mut free),
-                Some(&mut total),
-                None,
-            )
-            .is_ok()
-                && total > 0
-            {
-                let total_gb = total as f64 / 1024.0 / 1024.0 / 1024.0;
-                let free_gb = free as f64 / 1024.0 / 1024.0 / 1024.0;
+            // Disk usage moves slowly; refresh it every few seconds instead of
+            // on every UI tick. RAM stays per-sample because it is a cheap call
+            // and visibly changes.
+            let stale = self
+                .disk
+                .as_ref()
+                .map(|(at, _)| at.elapsed() >= std::time::Duration::from_secs(10))
+                .unwrap_or(true);
+
+            if stale {
+                let path: Vec<u16> = "C:\\".encode_utf16().chain(std::iter::once(0)).collect();
+                let (mut free, mut total) = (0u64, 0u64);
+                let value = if GetDiskFreeSpaceExW(
+                    PCWSTR(path.as_ptr()),
+                    Some(&mut free),
+                    Some(&mut total),
+                    None,
+                )
+                .is_ok()
+                    && total > 0
+                {
+                    let total_gb = total as f64 / 1024.0 / 1024.0 / 1024.0;
+                    let free_gb = free as f64 / 1024.0 / 1024.0 / 1024.0;
+                    Some((
+                        total_gb,
+                        free_gb,
+                        ((total_gb - free_gb) / total_gb * 100.0) as f32,
+                    ))
+                } else {
+                    None
+                };
+                self.disk = Some((std::time::Instant::now(), value));
+            }
+
+            if let Some((_, Some((total_gb, free_gb, pct)))) = self.disk {
                 gauges.disk_total_gb = Some(total_gb);
                 gauges.disk_used_gb = Some(total_gb - free_gb);
-                gauges.disk_used_pct = Some(((total_gb - free_gb) / total_gb * 100.0) as f32);
+                gauges.disk_used_pct = Some(pct);
             }
         }
 
