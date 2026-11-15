@@ -94,6 +94,59 @@ bits   63..24        23..16     15..8       7..0
 **Hypothesis, not proven:** byte 1 is a percentage (0–100) for fan speed and a
 mode index for fan behavior. Fuel for calibration — do not ship as fact.
 
+### 4.1 What M1 calibration actually found (2026-11-15)
+
+Capture: 90 s, 20 s idle + 70 s of in-process CPU load on all 12 threads,
+1 Hz, selectors 0–7 (`captures/calib-load.jsonl`).
+
+**The ACPI thermal zone tracked the load: 55.1 °C → 91.0 °C.**
+
+**The Acer interface did not change at all.** Only one selector produced a
+varying value across the whole run:
+
+| Selector | Behaviour under 70 s load |
+|---|---|
+| `GetGamingSysInfo(2)` | toggles `0x0000000000000000` ↔ `0x0000010000000000` — a flag (bit 40), not a measurement |
+| everything else | constant for the entire capture |
+
+Wide sweep over selectors 0–0xFF confirms the valid set is tiny:
+
+| Method | Valid selectors | Value |
+|---|---|---|
+| `GetGamingSysInfo` | 0, 1, 2 | `0x...0227000000`, `0x0`, `0x10000000000` |
+| `GetGamingFanSpeed` | **1, 4** | `0x6400` (100), constant |
+| `GetGamingFanBehavior` | many | alternates `0x100` / `0x4000` / `0x4100` — pattern follows the **selector's bits**, not a sensor index |
+| `GetGamingProfile` | 0 | `0x00FF000001000000`, constant |
+| `GetGamingProfileSetting` | none | status 1/2 for all |
+| `GetGamingFanTable` (no input) | — | `0x01` |
+
+`GetGamingFanBehavior` answering *every* odd selector with the same `0x100`, and
+`bit 3` setting flipping the answer to `0x4000`/`0x4100`, is the signature of an
+echoed bitfield — the EC is reflecting selector bits, not reporting fans. A
+sensor array would not behave this way.
+
+**Consequences:**
+
+1. **Temperatures do not come from this interface.** CPU temperature must come
+   from `MSAcpi_ThermalZoneTemperature`; GPU from NVML/NVAPI (NitroSense's
+   service uses `NvAPI_GPU_GetThermalSettings`, visible in its strings).
+2. **Fan RPM is probably not exposed here.** The `100` on selectors 1/4 never
+   moved through 70 s at 91 °C, so it is a configured setpoint or an index, not a
+   tachometer. Treat live RPM as unavailable until proven otherwise.
+3. **Fan control may still work** (`SetGamingFanBehavior`), but a write can no
+   longer be verified by reading RPM back. Verification must be behavioural:
+   write, then confirm `GetGamingFanBehavior` / `GetGamingProfile` reflects the
+   new state, and confirm thermal response separately.
+
+### 4.2 Access requirements are wider than expected
+
+`MSAcpi_ThermalZoneTemperature` instance enumeration is **also admin-only** on
+this machine — `Get-CimInstance`, `System.Management` and our COM client all fail
+with `Access denied` as a normal user, and all succeed elevated. Class metadata
+stays readable either way, which is what makes this confusing to discover.
+
+Net effect: **the whole tool needs elevation**, not just the fan writes.
+
 ### Captured samples (idle, 2026-11-15)
 
 | Call | Raw | Reading |

@@ -13,10 +13,11 @@ nitro       ──────────────────────�
 
 ## Status
 
-**Phase 0 — read path working.** The protocol is mapped and the Rust client
-returns the same values as a PowerShell ground-truth probe.
+**Phase 0 + M1 — read path working, first calibration done.** The protocol is
+mapped, the Rust client matches the PowerShell ground truth, and the M1 capture
+proved the Acer interface carries no thermal data (see below).
 
-Not yet: temperature/fan decode, setters, UI. See [docs/PLAN.md](docs/PLAN.md).
+Not yet: setters, UI, GPU temps. See [docs/PLAN.md](docs/PLAN.md).
 
 > **Do not uninstall NitroSense yet.** It is the reference implementation until
 > `nitro` reaches parity.
@@ -39,9 +40,23 @@ cargo build --release
 
 ```powershell
 nitro status                          # raw values for all getters
+nitro temp                            # ACPI thermal zones in Celsius
 nitro probe                           # sweep input selectors 0..0x20
 nitro raw GetGamingProfile 0          # single call, hex output
+nitro calibrate --seconds 90 --idle 20 --load
+nitro analyze captures\calib-*.jsonl  # which selectors actually move
 ```
+
+`calibrate` and `analyze` are the M1 investigation tools: capture under load and
+see which values track it. `analyze` needs no elevation.
+
+## What the interface does not give us
+
+A 90 s load capture moved the ACPI thermal zone 55 → 91 °C while nothing in the
+Acer interface changed. Temperatures therefore come from
+`MSAcpi_ThermalZoneTemperature` (CPU) and NVML (GPU), not from the gaming
+interface — and live fan RPM appears not to be exposed at all. See
+[docs/PROTOCOL.md §4.1](docs/PROTOCOL.md).
 
 Set `NITRO_INSTANCE` to override the default ACPI instance
 (`ACPI\PNP0C14\APGe_0`) on a different model.

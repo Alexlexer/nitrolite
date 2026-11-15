@@ -3,7 +3,10 @@
 Replacement for Acer NitroSense: a small Rust tray app that talks directly to the
 Acer ACPI gaming interface instead of running a 630 MB Electron stack.
 
-**Status:** Phase 0 complete — protocol mapped, read path working.
+**Status:** Phase 0 and M1 complete — protocol mapped, read path working, first
+calibration capture analysed. **M1 overturned a core assumption:** the Acer
+interface carries no thermal data and probably no live fan RPM, so temperatures
+must come from `MSAcpi_ThermalZoneTemperature` (CPU) and NVML (GPU).
 
 ---
 
@@ -25,7 +28,7 @@ Acer ACPI gaming interface instead of running a 630 MB Electron stack.
 - Found the three quirks that block naive implementations (admin-only instance enumeration, `gmOutput` delivered as BSTR, `Put` wanting `VT_I4`).
 - Working Rust read path: `nitro.exe` (162 KB) returns values identical to the PowerShell ground truth.
 
-**Not done:** packing decode, setters, UI, privilege model, decommissioning.
+**Not done:** setters, UI, privilege model, decommissioning.
 
 See [PROTOCOL.md](PROTOCOL.md) for the interface details and evidence.
 
@@ -49,21 +52,28 @@ service must stay installed anyway — it defeats the point of removing the stac
 
 ## 4. Roadmap
 
-### Phase 1 — Decode the read path  `[M1, M2]`
+### Phase 1 — Decode the read path  `[M1 ✅, M2]`
 
-The core unknown. `gmOutput` is a packed word; the low byte is an ACPI status
-(0 ok, 1/2 unsupported) and the remaining bytes carry values in a layout we have
-not proven yet.
+**M1 result (2026-11-15).** A 90 s capture with 70 s of CPU load moved the ACPI
+thermal zone 55.1 → 91.0 °C while **nothing in the Acer interface changed**. A
+full 0–0xFF selector sweep found only a handful of valid selectors, and
+`GetGamingFanBehavior` answers with a pattern that tracks the *selector's bits*
+rather than any sensor. Details in [PROTOCOL.md §4.1](PROTOCOL.md).
 
-- [ ] **M1 Calibration harness.** `nitro calibrate` — sample all four getters at
-      1 Hz into JSONL, alongside `MSAcpi_ThermalZoneTemperature` and a synthetic
-      CPU load. Correlate: temperature fields track load, fan fields lag it.
-- [ ] **M2 Decode table.** Write down the proven byte layout per selector:
-      which selectors are valid, what each byte means, units and scale. Encode it
-      as pure functions with fixture tests taken from real captures.
+- [x] **M1 Calibration harness.** `nitro calibrate` samples every getter into
+      JSONL under optional load; `nitro analyze` reports which selectors move.
+- [ ] **M2 Revised decode.** Scope is now smaller and different:
+  - [ ] Real temperature sources: CPU via `MSAcpi_ThermalZoneTemperature`
+        (working, elevated), GPU via NVML.
+  - [ ] `GetGamingProfile` / `GetGamingFanBehavior` semantics: what do
+        `0x00FF000001000000`, `0x100`, `0x4000`, `0x4100` mean, and which are
+        profile vs fan-curve state?
+  - [ ] Determine whether live fan RPM is available at all. If not, close the
+        question explicitly rather than leaving it open.
 
-**Exit criteria:** a `nitro temp` / `nitro fan` output whose numbers match what
-NitroSense shows, for CPU temp, GPU temp, and both fans, at idle and under load.
+**Exit criteria (revised):** CPU and GPU temperatures displayed and correct at
+idle and under load; profile/behaviour values mapped to the four known mode
+names; a written verdict on whether fan RPM is obtainable.
 
 ### Phase 2 — Safe setters  `[M3, M4]`
 
@@ -73,8 +83,10 @@ NitroSense shows, for CPU temp, GPU temp, and both fans, at idle and under load.
       Restore `auto` on panic / on exit / on `Drop`. Never write a value that the
       read path has not first confirmed is accepted.
 
-**Exit criteria:** mode changes are observable in NitroSense (or in fan RPM after
-decode), and killing the tool mid-session never leaves fans pinned.
+**Exit criteria:** mode changes are observable in NitroSense, or — after
+NitroSense is gone — a write is confirmed by reading back the new
+`GetGamingFanBehavior` / `GetGamingProfile` state, plus a measured thermal
+response. Killing the tool mid-session never leaves fans pinned.
 
 > **Safety gate:** no setter work merges until M1/M2 land. Writing EC bytes blind
 > is how laptops end up with fans at zero and no thermal headroom.
@@ -115,6 +127,7 @@ incident, no manual intervention needed.
 
 | Risk | Impact | Mitigation |
 |---|---|---|
+| **Interface exposes no thermal data and probably no fan RPM** (confirmed M1) | Cannot show fan speed; writes cannot be verified by tachometer | Temps from ACPI zone + NVML; verify writes behaviourally; state the limitation instead of faking a number |
 | Packing decode is wrong | Wrong temps/mode shown; bad fan decisions | Calibrate against known-good sources before any write; fixture tests |
 | EC write bricks fan behaviour | Overheating | Setters gated behind decode; read-back verification; auto-restore on exit |
 | Acer services also drive the fan | Our writes fight `AcerHardwareService` | Close NitroSense during tests; document coexistence; test with service stopped |
@@ -124,10 +137,11 @@ incident, no manual intervention needed.
 
 ## 6. Testing
 
-- **Unit:** decode functions against captured fixture vectors (no hardware).
+- **Unit:** decode functions against captured fixture vectors in `fixtures/`
+  (committed, hand-trimmed, no hardware needed).
 - **Integration:** `#[ignore]`d tests that require elevation and real hardware.
-- **Calibration:** `nitro calibrate` output is committed as a golden file for this
-  machine; decode changes must keep it consistent.
+- **Calibration:** `captures/*.jsonl` is machine-specific and gitignored; trim a
+  representative window into `fixtures/` when a decode rule is proven against it.
 - **Manual:** thermal test — 10 min sustained load with the tool active, watching
   package temperature and fan RPM.
 
@@ -135,8 +149,9 @@ incident, no manual intervention needed.
 
 1. Does `AcerHardwareService` need to stay installed for the EC to behave, or is
    the ACPI method authoritative on its own?
-2. Which selectors are the valid ones for `GetGamingFanSpeed`? Only 1 and 4 return
-   plausible data; 2/3 return status 1.
+2. What does `GetGamingFanSpeed`'s constant `100` (selectors 1 and 4) represent —
+   a setpoint percentage, a curve index, or something else? It did not move
+   through 70 s at 91 °C.
 3. Is `GetGamingProfile(0) = 0x00FF000001000000` a profile pinion (`0xFF` marker)
    or two packed fields?
 4. Does the Turbo key (`ModeSwitchKey: false` on this model) route through
@@ -152,7 +167,9 @@ nitro/
 │   ├── PLAN.md          # this file
 │   └── PROTOCOL.md      # reverse-engineered interface + evidence
 ├── src/
-│   ├── main.rs          # CLI: status / probe / raw
-│   └── acer.rs          # COM/WMI client for AcerGamingFunction
-└── captures/            # calibration output (golden files), gitignored by default
+│   ├── main.rs          # CLI: status / temp / probe / raw / calibrate / analyze
+│   ├── calib.rs         # M1 sampling harness + capture analysis
+│   └── acer.rs          # COM/WMI client: AcerGamingFunction + thermal zones
+├── captures/            # raw calibration captures (gitignored)
+└── fixtures/            # trimmed captures used by unit tests (committed)
 ```
