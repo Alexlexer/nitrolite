@@ -7,8 +7,6 @@
 //! Runs elevated (the ACPI reads need it), refreshes temperatures on a 2 s
 //! timer, and changes mode via the verified setter from M3.
 
-use std::ffi::c_void;
-
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -301,5 +299,6 @@ pub fn run(instance: &str) -> Result<(), String> {
 
     Ok(())
 }
+
 
 

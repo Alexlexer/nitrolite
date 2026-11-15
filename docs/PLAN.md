@@ -122,6 +122,7 @@ under option B.
       private. The gap is COM/WMI, the `windows` crate's static data, and NVML
       being loaded eagerly. Worth a pass later (`M6b`), but not worth blocking on
       — it is already a ~25× reduction.
+- [x] **M6c TUI.** `nitro tui` — live dashboard (mode, CPU zone, GPU), keys 1/2/3 to switch mode with read-back verification, q to quit. ASCII borders when stdout is not a console so redirected output stays readable.
 - [ ] **M7 Small window.** Live temps + fan RPM, mode buttons, fan curve editor
       (custom table via `SetGamingFanTable`) only if M2 makes the table
       interpretable.
@@ -193,3 +194,4 @@ nitro/
 ├── captures/            # raw calibration captures (gitignored)
 └── fixtures/            # trimmed captures used by unit tests (committed)
 ```
+

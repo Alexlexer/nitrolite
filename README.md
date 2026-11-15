@@ -40,6 +40,7 @@ cargo build --release
 
 ```powershell
 nitro tray                            # tray icon: temps in tooltip, mode menu
+nitro tui                             # terminal dashboard: temps + mode keys
 nitro status                          # raw values for all getters
 nitro temp                            # ACPI thermal zones + GPU temperature
 nitro mode                            # current operating mode
@@ -86,3 +87,4 @@ docs/PROTOCOL.md  reverse-engineered protocol + captured samples
 ## License
 
 MIT
+

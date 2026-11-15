@@ -2,6 +2,7 @@ mod acer;
 mod calib;
 mod nvml;
 mod tray;
+mod tui;
 
 use acer::{AcerWmi, DEFAULT_INSTANCE};
 use calib::{CalibOpts, DEFAULT_SELECTORS};
@@ -107,6 +108,14 @@ fn main() {
             calib::run(&wmi, &opts)
         }
         "watch" => watch(&wmi, &args),
+        "tui" => {
+            let nvml = nvml::Nvml::load().ok();
+            if args.iter().any(|a| a == "--once") {
+                tui::run_once(&wmi, nvml.as_ref())
+            } else {
+                tui::run(&wmi, nvml.as_ref())
+            }
+        }
         "mode" => match args.get(1).map(String::as_str) {
             None => match wmi.get("GetGamingMiscSetting", 0x0B) {
                 Ok(raw) => {
