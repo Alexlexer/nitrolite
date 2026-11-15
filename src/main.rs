@@ -97,6 +97,14 @@ fn main() {
             calib::run(&wmi, &opts)
         }
         "watch" => watch(&wmi, &args),
+        "mode" => match wmi.get("GetGamingMiscSetting", 0x0B) {
+            Ok(raw) => {
+                let value = ((raw >> 8) & 0xFF) as u8;
+                println!("mode {value} ({})", mode_name(value));
+                Ok(())
+            }
+            Err(e) => Err(e),
+        },
         other => {
             eprintln!("unknown command: {other}");
             eprintln!("usage: nitro [status|probe|raw|calibrate|analyze]");
@@ -271,11 +279,13 @@ fn watch(wmi: &AcerWmi, args: &[String]) -> Result<(), String> {
 
     println!("watching for {seconds}s (changes only)\n");
 
-    let probes: [(&str, &[u32]); 4] = [
+    let probes: [(&str, &[u32]); 5] = [
         ("GetGamingProfile", &[0]),
         ("GetGamingFanBehavior", &[1, 3]),
         ("GetGamingFanSpeed", &[1, 4]),
         ("GetGamingSysInfo", &[0, 1, 2]),
+        // MiscSetting carries live state (0x07=255, 0x08=1, 0x0A=83, 0x0B toggles)
+        ("GetGamingMiscSetting", &[7, 8, 10, 11]),
     ];
 
     let start = std::time::Instant::now();
@@ -300,6 +310,21 @@ fn watch(wmi: &AcerWmi, args: &[String]) -> Result<(), String> {
 
     println!("\nwatch finished");
     Ok(())
+}
+
+/// Operating mode, as reported by `GetGamingMiscSetting(0x0B)`.
+///
+/// Mapping established by observing NitroSense mode switches against
+/// `OPERATING_MODE` in its own log (see docs/PROTOCOL.md §4.3):
+///   0 = Quiet, 1 = Balanced, 4 = Performance, 6 = (Turbo, tentative)
+fn mode_name(value: u8) -> &'static str {
+    match value {
+        0 => "Quiet",
+        1 => "Balanced",
+        4 => "Performance",
+        6 => "Turbo (unconfirmed)",
+        _ => "Unknown",
+    }
 }
 
 fn gpu_report() -> Result<(), String> {
