@@ -1,0 +1,67 @@
+# nitro
+
+A minimal replacement for Acer NitroSense on the Nitro ANV15-51 (and hopefully
+sibling models): talks straight to the Acer ACPI gaming interface instead of
+running an Electron app to do it.
+
+NitroSense on this machine: **~630 MB across 4 processes**. `nitro.exe`: **162 KB**.
+
+```
+NitroSense  →  named pipe  →  AcerHardwareService (SYSTEM)  →  root\WMI  →  ACPI  →  EC
+nitro       ─────────────────────────────────────────────────→  root\WMI  →  ACPI  →  EC
+```
+
+## Status
+
+**Phase 0 — read path working.** The protocol is mapped and the Rust client
+returns the same values as a PowerShell ground-truth probe.
+
+Not yet: temperature/fan decode, setters, UI. See [docs/PLAN.md](docs/PLAN.md).
+
+> **Do not uninstall NitroSense yet.** It is the reference implementation until
+> `nitro` reaches parity.
+
+## Requirements
+
+- Windows 10/11, Acer hardware exposing `root\WMI : AcerGamingFunction`
+- **An elevated shell** — the ACPI instance is admin-only; a non-elevated run
+  fails at `ExecMethod` with `Access denied (0x80041003)`
+- Rust (tested with the toolchain at `%USERPROFILE%\.cargo\bin`)
+
+## Build
+
+```powershell
+cargo build --release
+# -> target\release\nitro.exe
+```
+
+## Usage
+
+```powershell
+nitro status                          # raw values for all getters
+nitro probe                           # sweep input selectors 0..0x20
+nitro raw GetGamingProfile 0          # single call, hex output
+```
+
+Set `NITRO_INSTANCE` to override the default ACPI instance
+(`ACPI\PNP0C14\APGe_0`) on a different model.
+
+## Interface notes
+
+The ACPI interface has three traps that make naive implementations fail — instance
+enumeration needs admin, `gmOutput` arrives as a BSTR string, and `Put(gmInput)`
+needs `VT_I4` rather than the `VT_UI4` the MOF declares. Details and evidence:
+[docs/PROTOCOL.md](docs/PROTOCOL.md).
+
+## Layout
+
+```
+src/main.rs    CLI: status / probe / raw
+src/acer.rs    COM/WMI client for AcerGamingFunction
+docs/PLAN.md   roadmap, risks, milestones
+docs/PROTOCOL.md  reverse-engineered protocol + captured samples
+```
+
+## License
+
+MIT
