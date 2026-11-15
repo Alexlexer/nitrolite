@@ -1,5 +1,6 @@
 mod acer;
 mod calib;
+mod nvml;
 
 use acer::{AcerWmi, DEFAULT_INSTANCE};
 use calib::{CalibOpts, DEFAULT_SELECTORS};
@@ -34,6 +35,15 @@ fn main() {
         return;
     }
 
+    // `gpu` uses NVML only — no WMI, no elevation.
+    if cmd == "gpu" {
+        if let Err(e) = gpu_report() {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     let wmi = match AcerWmi::connect(&instance) {
         Ok(w) => w,
         Err(e) => {
@@ -52,6 +62,19 @@ fn main() {
             Ok(zones) => {
                 for (i, z) in zones.iter().enumerate() {
                     println!("zone {i}: {z:.1} C");
+                }
+                match nvml::Nvml::load() {
+                    Ok(nv) => match nv.read_all() {
+                        Ok(gpus) => {
+                            for g in gpus {
+                                if let Some(t) = g.temp_c {
+                                    println!("gpu {} ({}): {t} C", g.index, g.name);
+                                }
+                            }
+                        }
+                        Err(e) => println!("gpu: {e}"),
+                    },
+                    Err(e) => println!("gpu: {e}"),
                 }
                 Ok(())
             }
@@ -224,6 +247,31 @@ fn probe(wmi: &AcerWmi) -> Result<(), String> {
                 );
             }
         }
+    }
+    Ok(())
+}
+
+fn gpu_report() -> Result<(), String> {
+    let nv = nvml::Nvml::load()?;
+    let gpus = nv.read_all()?;
+    if gpus.is_empty() {
+        println!("no NVIDIA GPUs reported by NVML");
+        return Ok(());
+    }
+    for g in gpus {
+        println!("GPU {}: {}", g.index, g.name);
+        println!(
+            "  temperature: {}",
+            g.temp_c
+                .map(|t| format!("{t} C"))
+                .unwrap_or_else(|| "unavailable".to_string())
+        );
+        println!(
+            "  fan:         {}",
+            g.fan_pct
+                .map(|f| format!("{f} %"))
+                .unwrap_or_else(|| "not exposed by this driver/GPU".to_string())
+        );
     }
     Ok(())
 }
