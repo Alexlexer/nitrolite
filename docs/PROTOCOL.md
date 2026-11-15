@@ -337,6 +337,36 @@ The Store app is a **client** of the interface we talk to, not a provider of it.
 Uninstalling NitroSense cannot remove a firmware ACPI device; uninstalling the
 Acer *drivers* might.
 
+## 11. Where fan speed lives — and why we cannot read it
 
+Earlier notes said fan RPM was "not exposed". That was imprecise. It exists, just
+not on the interface we own.
 
+**It exists here** — `AcerSysMonitorService.exe` (service `ASMSvc` →
+`AcerSystemCentralService.exe` → `AcerSysMonitorService.exe`) contains:
+
+```
+CPU_FANSPEED  GPU1_FANSPEED  GPU2_FANSPEED  SYS1_FANSPEED  SYS2_FANSPEED
+PSSocket::Get_CPU_FanSpeed   PSSocket::Get_GPU_FanSpeed   PSSocket::Get_SYS1_FanSpeed
+```
+
+**Transport, investigated:**
+
+| Path | Result |
+|---|---|
+| WebSocket on `ws://127.0.0.1:46760` | handshake succeeds (state `Open`), replies `{"result":"3"}` to every payload tried |
+| Raw TCP on `127.0.0.1:46753` | replies JSON (not HTTP) to any input; same `result:3` |
+| Command shapes tried | HTTP GET, `{"command_id":"GET_MONITOR_DATA"}`, `INITIALIZATION`, `GET_UPDATED_DATA`, `{"command":...}`, `{"cmd":...}` |
+| Crypto | binary embeds **CryptoPP with Rijndael/ECB** — payloads are almost certainly encrypted with an embedded key, which would explain `result:3` for every plaintext attempt |
+| Named pipe `\\.\pipe\predatorsense_hardware_service_` | live, plaintext command codes (`kSvcCmd*`), but its only fan command is `kSvcCmdWMIGetGamingFanGroupSpeed`, which maps back to the constant WMI value `100` |
+| EC as HID | no such device — only `Acer Airplane Mode Controller` (ACPI\10251229), unrelated |
+| `APGeAction.GetFunction(0x03/0x04)` | `0x11C000` / `0x1E0F00` — constant across a 70 s load cycle, so capability/threshold values, not tachometer |
+
+**Conclusion:** reading live fan RPM requires either reversing the encrypted
+WebSocket protocol of `AcerSysMonitorService`, or EC access through a kernel
+driver (WinRing0-style; risky and blocked by HVCI on current Windows). Neither is
+a small, safe addition — both conflict with the "don't become NitroSense" goal.
+
+What *is* available read-only: `GetGamingFanSpeed(1|4)` returns `100`, a level or
+percentage-style value, constant in all tests.
 
