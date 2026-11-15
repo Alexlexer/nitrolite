@@ -1,5 +1,6 @@
 mod acer;
 mod calib;
+mod elevate;
 mod nvml;
 mod tray;
 mod tui;
@@ -20,6 +21,26 @@ fn main() {
     let cmd = args.first().map(String::as_str).unwrap_or("status");
     let instance =
         std::env::var("NITROLITE_INSTANCE").unwrap_or_else(|_| DEFAULT_INSTANCE.to_string());
+
+    // Interactive commands need admin (the ACPI instance is admin-only).
+    // Relaunch elevated rather than making the user find an admin terminal.
+    let interactive = match cmd {
+        "tray" => true,
+        "tui" => !args.iter().any(|a| a == "--once"),
+        _ => false,
+    };
+    if interactive && !elevate::is_elevated() {
+        match elevate::relaunch_elevated() {
+            Ok(_) => {
+                println!("elevation required - launched in a new elevated window");
+                return;
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+    }
 
     // `analyze` works on a file and needs no hardware access.
     if cmd == "analyze" {
@@ -452,4 +473,5 @@ fn parse_num(s: &str) -> Option<u32> {
         s.parse().ok()
     }
 }
+
 

@@ -29,6 +29,20 @@ Not yet: setters, UI, GPU temps. See [docs/PLAN.md](docs/PLAN.md).
   fails at `ExecMethod` with `Access denied (0x80041003)`
 - Rust (tested with the toolchain at `%USERPROFILE%\.cargo\bin`)
 
+## Starting it
+
+```powershell
+nitrolite tui     # terminal dashboard — prompts for UAC, opens elevated
+nitrolite tray    # tray icon — prompts for UAC
+```
+
+Both self-elevate, so run them from any shell (or via the Desktop / Start Menu
+shortcuts). One-shot commands (`mode`, `temp`, `status`) do **not** self-elevate —
+an elevated child gets its own console and its output would vanish — so run those
+from an elevated terminal.
+
+The TUI does not scroll: it draws in the alternate screen, adapts to the terminal
+height, and restores your scrollback on exit.
 ## Build
 
 ```powershell
@@ -96,6 +110,7 @@ docs/PROTOCOL.md  reverse-engineered protocol + captured samples
 ## License
 
 MIT
+
 
 
 
