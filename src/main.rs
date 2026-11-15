@@ -44,6 +44,19 @@ fn main() {
 
     let result = match cmd {
         "status" => status(&wmi),
+        "temp" => match wmi.thermal_zones() {
+            Ok(zones) if zones.is_empty() => {
+                println!("no ACPI thermal zones reported");
+                Ok(())
+            }
+            Ok(zones) => {
+                for (i, z) in zones.iter().enumerate() {
+                    println!("zone {i}: {z:.1} C");
+                }
+                Ok(())
+            }
+            Err(e) => Err(e),
+        },
         "probe" => probe(&wmi),
         "raw" => {
             let method = args.get(1).map(String::as_str).unwrap_or("GetGamingProfile");
