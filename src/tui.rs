@@ -340,15 +340,12 @@ fn panel(title: &str, body: Vec<Line>, width: usize, style: &str) -> Vec<Line> {
     let heading = format!("─ {title} ");
     let fill = inner.saturating_sub(heading.chars().count());
     out.push((
-        format!(
-            "{}",
-            paint(&[
-                ("┌", style),
-                (heading.as_str(), style),
-                (&repeat('─', fill), style),
-                ("┐", style),
-            ])
-        ),
+        paint(&[
+            ("┌", style),
+            (heading.as_str(), style),
+            (&repeat('─', fill), style),
+            ("┐", style),
+        ]),
         width,
     ));
 
@@ -357,27 +354,24 @@ fn panel(title: &str, body: Vec<Line>, width: usize, style: &str) -> Vec<Line> {
         let pad = inner.saturating_sub(used + 1);
         out.push((
             format!(
-                "{}{}{}{}",
+                "{}{}{}{}{}",
                 paint(&[("│", style)]),
                 " ",
                 content,
-                format!("{}{}", " ".repeat(pad), paint(&[("│", style)])),
+                " ".repeat(pad),
+                paint(&[("│", style)]),
             ),
             width,
         ));
     }
 
     out.push((
-        format!(
-            "{}",
-            paint(&[("└", style), (&repeat('─', inner), style), ("┘", style),])
-        ),
+        paint(&[("└", style), (&repeat('─', inner), style), ("┘", style)]),
         width,
     ));
 
     out
 }
-
 /// Join panels side by side. Panels are padded to a common height.
 fn row(panels: Vec<Vec<Line>>, gap: usize) -> Vec<Line> {
     let height = panels.iter().map(|p| p.len()).max().unwrap_or(0);
@@ -665,8 +659,9 @@ fn frame(mut body: Vec<Line>, w: usize, h: usize, data: &Data) -> Vec<String> {
         ));
     }
 
-    let footer = format!(
-        " {}   ·   CPU {}   GPU {}",
+    // Truncated to the inner width so a long GPU name cannot break the border.
+    let footer_full = format!(
+        " {}   ·   CPU {}   GPU {}   ·   {}",
         env!("CARGO_PKG_NAME"),
         data.cpu_temp
             .map(|t| format!("{t:.0}C"))
@@ -676,7 +671,9 @@ fn frame(mut body: Vec<Line>, w: usize, h: usize, data: &Data) -> Vec<String> {
             .and_then(|g| g.temp_c)
             .map(|t| format!("{t}C"))
             .unwrap_or_else(|| "--".into()),
+        data.gpu_name,
     );
+    let footer: String = footer_full.chars().take(inner).collect();
     let pad = inner.saturating_sub(footer.chars().count());
     out.push(format!(
         "{}{}{}{}",
