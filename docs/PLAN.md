@@ -26,7 +26,7 @@ why it was not pursued.
 - Identified the live ACPI instance: `ACPI\PNP0C14\APGe_0`.
 - Enumerated all 25 methods and their parameter shapes.
 - Found the three quirks that block naive implementations (admin-only instance enumeration, `gmOutput` delivered as BSTR, `Put` wanting `VT_I4`).
-- Working Rust read path: `nitrolite.exe` (162 KB) returns values identical to the PowerShell ground truth.
+- Working Rust read path: `nitrolite.exe` (736 KB) returns values identical to the PowerShell ground truth.
 
 **Not done:** setters, UI, privilege model, decommissioning.
 
@@ -132,9 +132,14 @@ idle CPU under 0.5 %.
 
 ### Phase 5 — Parity and decommission  `[M8]`
 
-- [ ] **M8** Feature parity check against NitroSense on this model (fan mode,
-      temps, fan readout). Then: uninstall NitroSense, document how to restore it,
-      verify behaviour survives reboot and an Acer driver update.
+- [x] **M8 Decommission.** NitroSense was uninstalled after independence was
+      proven three ways (processes killed, Acer service stack stopped, package
+      removed — reads, temperatures and verified writes kept working). Fan mode,
+      temperatures and fan readout all have parity; the fan-curve editor does not,
+      and is out of scope by decision. Restore path documented in the README.
+- [ ] Remaining gap, accepted: **fan-curve editor** (`SetGamingFanTable`). Not
+      implemented because the table encoding is unknown and custom curves were
+      explicitly not wanted.
 
 **Exit criteria:** 72 hours of daily use with NitroSense removed, no thermal
 incident, no manual intervention needed.
@@ -194,6 +199,7 @@ nitrolite/
 ├── captures/            # raw calibration captures (gitignored)
 └── fixtures/            # trimmed captures used by unit tests (committed)
 ```
+
 
 
 
