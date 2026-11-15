@@ -172,11 +172,11 @@ incident, no manual intervention needed.
    through 70 s at 91 °C.
 3. Is `GetGamingProfile(0) = 0x00FF000001000000` a profile pinion (`0xFF` marker)
    or two packed fields?
-4. Does the Turbo key (`ModeSwitchKey: false` on this model) route through
-   `SetGamingMiscSetting`? **Resolved: there is no Turbo on this model.** `6` is
-   ECO, applied automatically on adaptor change (`ACDCModeSet: true`). A
-   replacement must decide whether to reproduce that AC/DC switching —
-   otherwise it happens underneath us anyway.
+4. ~~Does the Turbo key route through `SetGamingMiscSetting`?~~ **Resolved:** there
+   is no Turbo on this model; `6` is ECO. **Implemented:** the AC/DC follow now
+   lives in `power.rs` — ECO on battery, preferred mode on AC. Verified that
+   NitroSense, not the Acer service, had been doing this: with NitroSense
+   uninstalled and `AASSvc` running, unplugging left the mode at Balanced.
 5. Is `SetGamingFanTable` usable, or does it need the EC's factory curve format?
 
 ## 8. Repo layout
@@ -194,6 +194,7 @@ nitrolite/
 ├── captures/            # raw calibration captures (gitignored)
 └── fixtures/            # trimmed captures used by unit tests (committed)
 ```
+
 
 
 
