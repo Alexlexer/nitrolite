@@ -326,7 +326,7 @@ Verified by stopping things and re-running reads and writes:
 
 | Dependency | Required? | Evidence |
 |---|---|---|
-| NitroSense (Store app) | **No** | killed all 4 processes; reads, temps and verified writes all still worked |
+| NitroSense (Store app) | **No** | killed all 4 processes, then **uninstalled the package entirely** (`package present after uninstall: False`); reads, temperatures and verified mode writes all still worked |
 | `AASSvc` / `AcerHardwareService.exe` (Acer service stack) | **No** | stopped the service, confirmed `AcerHardwareService.exe` gone, then read **and wrote** mode successfully |
 | Acer ACPI **driver** component (`AcerDeviceEnablingServiceV2`, `acerdeviceenablingservicecomponent.inf`) | Presumed yes | not tested — stopping it risks leaving the ACPI device disabled until reboot |
 | ACPI firmware device `ACPI\PNP0C14\APGe_0` | **Yes** | this *is* the interface; enumerated from the firmware namespace by `acpi.sys`, not provided by any installed app |
@@ -336,6 +336,7 @@ Verified by stopping things and re-running reads and writes:
 The Store app is a **client** of the interface we talk to, not a provider of it.
 Uninstalling NitroSense cannot remove a firmware ACPI device; uninstalling the
 Acer *drivers* might.
+
 
 
 

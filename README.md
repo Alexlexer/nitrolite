@@ -82,10 +82,7 @@ needs `VT_I4` rather than the `VT_UI4` the MOF declares. Details and evidence:
 - NVIDIA driver for GPU temperatures (optional — degrades to CPU-only)
 - an elevated shell
 
-**NitroSense is not required.** Verified with all four NitroSense processes killed
-*and* the entire Acer service stack (`AASSvc` / `AcerHardwareService.exe`) stopped:
-reads, temperatures and verified mode writes all still worked. See
-[docs/PROTOCOL.md §10](docs/PROTOCOL.md).
+**NitroSense is not required.** Verified three ways: all four NitroSense processes killed, the entire Acer service stack (`AASSvc` / `AcerHardwareService.exe`) stopped, and finally the package **uninstalled outright** — reads, temperatures and verified mode writes all still worked each time. See [docs/PROTOCOL.md §10](docs/PROTOCOL.md).
 
 ## Layout
 
@@ -99,6 +96,7 @@ docs/PROTOCOL.md  reverse-engineered protocol + captured samples
 ## License
 
 MIT
+
 
 
 

@@ -73,7 +73,7 @@ fn cell(text: &str, width: usize) -> String {
     s
 }
 
-fn render(data: &Data, width: usize) -> Vec<String> {
+fn render(data: &Data, width: usize, compact: bool) -> Vec<String> {
     let unicode = UNICODE_BOX.load(Ordering::Relaxed);
     let (tl, tr, bl, br, h, v) = if unicode {
         ('┌', '┐', '└', '┘', '─', '│')
@@ -96,7 +96,7 @@ fn render(data: &Data, width: usize) -> Vec<String> {
         .map(|z| format!("{z:.1} C"))
         .unwrap_or_else(|| "n/a".to_string());
 
-    let rows = [
+    let mut rows = vec![
         ("Mode", mode_name(data.mode).to_string()),
         ("CPU (ACPI zone)", cpu),
         (
@@ -105,19 +105,26 @@ fn render(data: &Data, width: usize) -> Vec<String> {
                 .map(|t| format!("{t} C"))
                 .unwrap_or_else(|| "n/a".to_string()),
         ),
-        ("GPU name", data.gpu_name.clone()),
     ];
+    // Dropped first when the terminal is short, so the frame never wraps.
+    if !compact {
+        rows.push(("GPU name", data.gpu_name.clone()));
+    }
 
     for (label, value) in rows {
         lines.push(row(format!("  {label:<16}{value}")));
     }
 
-    lines.push(row(String::new()));
+    if !compact {
+        lines.push(row(String::new()));
+    }
     lines.push(row("  [1] Quiet   [2] Balanced   [3] Performance".to_string()));
     lines.push(row("  [r] refresh                    [q] quit".to_string()));
 
     if !data.status.is_empty() {
-        lines.push(row(String::new()));
+        if !compact {
+            lines.push(row(String::new()));
+        }
         lines.push(row(format!("  {}", data.status)));
     }
 
@@ -126,14 +133,27 @@ fn render(data: &Data, width: usize) -> Vec<String> {
 }
 
 fn draw(out: &mut impl Write, data: &Data) -> io::Result<()> {
-    let (cols, _) = crossterm::terminal::size().unwrap_or((60, 20));
+    let (cols, rows) = crossterm::terminal::size().unwrap_or((60, 20));
     let width = (cols as usize).min(64).max(30);
-    let lines = render(data, width);
+    let height = rows as usize;
+
+    // A frame taller than the terminal would wrap and scroll the view. Drop
+    // optional rows before that can happen.
+    let mut lines = render(data, width, false);
+    if lines.len() > height {
+        lines = render(data, width, true);
+    }
+    lines.truncate(height);
 
     queue!(out, MoveTo(0, 0))?;
     for (i, line) in lines.iter().enumerate() {
         queue!(out, MoveTo(0, i as u16))?;
         write!(out, "{line}")?;
+    }
+    // Clear anything left over from a taller previous frame.
+    for i in lines.len()..height {
+        queue!(out, MoveTo(0, i as u16))?;
+        write!(out, "{}", " ".repeat(width))?;
     }
     out.flush()
 }
@@ -202,7 +222,7 @@ pub fn run_once(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
     set_utf8_console();
     let data = collect(wmi, nvml);
     let mut out = io::stdout();
-    for line in render(&data, 60) {
+    for line in render(&data, 60, false) {
         writeln!(out, "{line}").map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -267,6 +287,7 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
         }
     }
 }
+
 
 
 
