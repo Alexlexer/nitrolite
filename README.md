@@ -98,6 +98,27 @@ needs `VT_I4` rather than the `VT_UI4` the MOF declares. Details and evidence:
 
 **NitroSense is not required.** Verified three ways: all four NitroSense processes killed, the entire Acer service stack (`AASSvc` / `AcerHardwareService.exe`) stopped, and finally the package **uninstalled outright** — reads, temperatures and verified mode writes all still worked each time. See [docs/PROTOCOL.md §10](docs/PROTOCOL.md).
 
+## Hardware support
+
+Tested on exactly one machine: **Acer Nitro ANV15-51** (i5-13420H, RTX 4060
+Laptop, Windows 11 26H2 build 26300).
+
+That matters, because the interface is model- and firmware-specific:
+
+- The ACPI instance is `ACPI\PNP0C14\APGe_0`. Override with the
+  `NITROLITE_INSTANCE` environment variable if another machine exposes a
+  different path.
+- Every value in this repo — mode `0/1/4/6`, the fan/behaviour words, the
+  `(value << 8) | selector` setter packing — was derived **empirically** on this
+  laptop. Do not assume the same numbers mean the same things elsewhere; on a
+  different model `4` may not be "Performance".
+- Fan RPM is not read at all; see [docs/PROTOCOL.md §11](docs/PROTOCOL.md) for
+  why the data exists but is unreachable.
+- Confirmed absent on this model: keyboard/lightbar RGB, Turbo key, MUX switch,
+  Whisper mode.
+
+If it misbehaves on other hardware, `nitrolite probe` and `nitrolite raw` exist
+to dump what that machine actually returns before trusting anything else.
 ## Layout
 
 ```
@@ -110,6 +131,7 @@ docs/PROTOCOL.md  reverse-engineered protocol + captured samples
 ## License
 
 MIT
+
 
 
 
