@@ -1,6 +1,8 @@
 mod acer;
+mod calib;
 
 use acer::{AcerWmi, DEFAULT_INSTANCE};
+use calib::{CalibOpts, DEFAULT_SELECTORS};
 
 const GETTERS: [&str; 5] = [
     "GetGamingProfile",
@@ -16,23 +18,36 @@ fn main() {
     let instance =
         std::env::var("NITRO_INSTANCE").unwrap_or_else(|_| DEFAULT_INSTANCE.to_string());
 
+    // `analyze` works on a file and needs no hardware access.
+    if cmd == "analyze" {
+        let path = match args.get(1) {
+            Some(p) => p,
+            None => {
+                eprintln!("usage: nitro analyze <capture.jsonl>");
+                std::process::exit(2);
+            }
+        };
+        if let Err(e) = calib::analyze(path) {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     let wmi = match AcerWmi::connect(&instance) {
         Ok(w) => w,
         Err(e) => {
             eprintln!("connect failed: {e}");
-            eprintln!("(this needs an elevated shell; the ACPI instance is admin-only)");
             std::process::exit(1);
         }
     };
 
     let result = match cmd {
         "status" => status(&wmi),
+        "probe" => probe(&wmi),
         "raw" => {
             let method = args.get(1).map(String::as_str).unwrap_or("GetGamingProfile");
-            let sel: u32 = args
-                .get(2)
-                .and_then(|s| parse_num(s))
-                .unwrap_or(0) as u32;
+            let sel: u32 = args.get(2).and_then(|s| parse_num(s)).unwrap_or(0) as u32;
             match wmi.get(method, sel) {
                 Ok(v) => {
                     println!("{method}(in={sel}) = {v:#018X}");
@@ -41,10 +56,13 @@ fn main() {
                 Err(e) => Err(e),
             }
         }
-        "probe" => probe(&wmi),
+        "calibrate" => {
+            let opts = parse_calib_opts(&args);
+            calib::run(&wmi, &opts)
+        }
         other => {
             eprintln!("unknown command: {other}");
-            eprintln!("usage: nitro [status|probe|raw <method> <input>]");
+            eprintln!("usage: nitro [status|probe|raw|calibrate|analyze]");
             std::process::exit(2);
         }
     };
@@ -55,8 +73,74 @@ fn main() {
     }
 }
 
-/// Packed word layout, guessed so far: byte0 = ACPI status (0 ok, 1/2 error),
-/// byte1 = primary value, higher bytes = additional fields.
+fn parse_calib_opts(args: &[String]) -> CalibOpts {
+    let mut opts = CalibOpts {
+        seconds: 120,
+        idle_seconds: 15,
+        interval_ms: 1000,
+        selectors: DEFAULT_SELECTORS,
+        load: false,
+        out: default_capture_path(),
+    };
+
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--seconds" | "-s" => {
+                if let Some(v) = args.get(i + 1) {
+                    opts.seconds = v.parse().unwrap_or(opts.seconds);
+                    i += 1;
+                }
+            }
+            "--idle" => {
+                if let Some(v) = args.get(i + 1) {
+                    opts.idle_seconds = v.parse().unwrap_or(opts.idle_seconds);
+                    i += 1;
+                }
+            }
+            "--interval-ms" => {
+                if let Some(v) = args.get(i + 1) {
+                    opts.interval_ms = v.parse().unwrap_or(opts.interval_ms);
+                    i += 1;
+                }
+            }
+            "--selectors" => {
+                if let Some(v) = args.get(i + 1) {
+                    opts.selectors = v.parse().unwrap_or(opts.selectors);
+                    i += 1;
+                }
+            }
+            "--out" | "-o" => {
+                if let Some(v) = args.get(i + 1) {
+                    opts.out = v.clone();
+                    i += 1;
+                }
+            }
+            "--load" => opts.load = true,
+            "--help" | "-h" => {
+                println!("nitro calibrate [--seconds N] [--idle N] [--interval-ms N] [--selectors N] [--load] [--out FILE]");
+                std::process::exit(0);
+            }
+            other => {
+                eprintln!("ignoring unknown calibrate option: {other}");
+            }
+        }
+        i += 1;
+    }
+    opts
+}
+
+fn default_capture_path() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let _ = std::fs::create_dir_all("captures");
+    format!("captures/calib-{secs}.jsonl")
+}
+
+/// Packed word layout as far as proven: byte 0 = ACPI status,
+/// byte 1 = primary value. Everything above that is hypothesis until M2.
 struct Word(u64);
 
 impl Word {
@@ -77,7 +161,12 @@ impl Word {
 fn status(wmi: &AcerWmi) -> Result<(), String> {
     println!("Acer gaming interface (root\\WMI :: AcerGamingFunction)\n");
 
-    for method in ["GetGamingProfile", "GetGamingFanBehavior", "GetGamingFanSpeed", "GetGamingSysInfo"] {
+    for method in [
+        "GetGamingProfile",
+        "GetGamingFanBehavior",
+        "GetGamingFanSpeed",
+        "GetGamingSysInfo",
+    ] {
         println!("{method}");
         println!("  in   raw                  status   value");
         for sel in 0..=4u32 {
@@ -97,6 +186,14 @@ fn status(wmi: &AcerWmi) -> Result<(), String> {
         }
         println!();
     }
+
+    let zones = wmi.thermal_zones().unwrap_or_default();
+    if zones.is_empty() {
+        println!("ACPI thermal zones: none");
+    } else {
+        let list: Vec<String> = zones.iter().map(|z| format!("{z:.1} C")).collect();
+        println!("ACPI thermal zones: {}", list.join(", "));
+    }
     Ok(())
 }
 
@@ -104,12 +201,14 @@ fn probe(wmi: &AcerWmi) -> Result<(), String> {
     for method in GETTERS {
         println!("### {method}");
         for sel in 0..=0x20u32 {
-            match wmi.get(method, sel) {
-                Ok(raw) => {
-                    let w = Word(raw);
-                    println!("  in={sel:<4} {}  status={} value={}", w.raw(), w.status(), w.value());
-                }
-                Err(_) => {}
+            if let Ok(raw) = wmi.get(method, sel) {
+                let w = Word(raw);
+                println!(
+                    "  in={sel:<4} {}  status={} value={}",
+                    w.raw(),
+                    w.status(),
+                    w.value()
+                );
             }
         }
     }

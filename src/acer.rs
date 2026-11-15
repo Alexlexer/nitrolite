@@ -140,13 +140,52 @@ impl AcerWmi {
             match variant_to_u64(&out) {
                 Some(v) => Ok(v),
                 None => {
-                    let vt = unsafe { (*out.as_raw()).Anonymous.Anonymous.vt };
+                    let vt = (*out.as_raw()).Anonymous.Anonymous.vt;
                     Err(format!(
                         "gmOutput vt={vt} (unhandled); out params:{}",
                         dump_props(&out_params)
                     ))
                 }
             }
+        }
+    }
+    /// Read all ACPI thermal zones in Celsius (`MSAcpi_ThermalZoneTemperature`, root\WMI).
+    /// This is the known-good reference signal for calibration: it is a plain,
+    /// documented WMI class, independent of Acer's packed format.
+    pub fn thermal_zones(&self) -> Result<Vec<f64>, String> {
+        unsafe {
+            let enumerator = self
+                .services
+                .ExecQuery(
+                    &BSTR::from("WQL"),
+                    &BSTR::from("SELECT * FROM MSAcpi_ThermalZoneTemperature"),
+                    WBEM_GENERIC_FLAG_TYPE(0),
+                    None,
+                )
+                .map_err(|e| format!("ExecQuery(MSAcpi_ThermalZoneTemperature): {e}"))?;
+
+            let mut zones = Vec::new();
+            loop {
+                let mut objects: [Option<IWbemClassObject>; 1] = [None];
+                let mut returned = 0u32;
+                let hr = enumerator.Next(500, &mut objects, &mut returned);
+                if hr.is_err() || returned == 0 {
+                    break;
+                }
+                if let Some(obj) = objects[0].take() {
+                    let mut value = VARIANT::default();
+                    if obj
+                        .Get(&BSTR::from("CurrentTemperature"), 0, &mut value, None, None)
+                        .is_ok()
+                    {
+                        if let Some(raw) = variant_to_u64(&value) {
+                            // tenths of a Kelvin
+                            zones.push(raw as f64 / 10.0 - 273.15);
+                        }
+                    }
+                }
+            }
+            Ok(zones)
         }
     }
 }
