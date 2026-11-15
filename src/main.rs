@@ -1,6 +1,7 @@
 mod acer;
 mod calib;
 mod nvml;
+mod tray;
 
 use acer::{AcerWmi, DEFAULT_INSTANCE};
 use calib::{CalibOpts, DEFAULT_SELECTORS};
@@ -38,6 +39,15 @@ fn main() {
     // `gpu` uses NVML only — no WMI, no elevation.
     if cmd == "gpu" {
         if let Err(e) = gpu_report() {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    // `tray` manages its own WMI connection and message loop.
+    if cmd == "tray" {
+        if let Err(e) = tray::run(&instance) {
             eprintln!("error: {e}");
             std::process::exit(1);
         }

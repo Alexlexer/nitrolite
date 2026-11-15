@@ -109,9 +109,19 @@ under option B.
 
 ### Phase 4 — Tray UI  `[M6, M7]`
 
-- [ ] **M6 Minimal tray.** Icon + tooltip (temps), menu: Quiet / Balanced /
-      Performance / Turbo / Auto. Target **< 10 MB resident** — to be measured,
-      not assumed.
+- [x] **M6 Minimal tray.** Native Win32 (hidden message window +
+      `Shell_NotifyIconW`) — no GUI toolkit. Right-click menu: Quiet / Balanced /
+      Performance with the active one checked, plus Exit. Tooltip shows mode,
+      CPU and GPU temperature, refreshed on a 2 s timer. Mode changes go through
+      the verified setter and revert on read-back mismatch.
+
+      **Measured:** 22.9 MB private / 36.7 MB working set, 0.000 s CPU over 10 s
+      idle. NitroSense for comparison: ~577–630 MB across 5 processes.
+
+      **Target missed:** the plan said < 10 MB resident; we are at 22.9 MB
+      private. The gap is COM/WMI, the `windows` crate's static data, and NVML
+      being loaded eagerly. Worth a pass later (`M6b`), but not worth blocking on
+      — it is already a ~25× reduction.
 - [ ] **M7 Small window.** Live temps + fan RPM, mode buttons, fan curve editor
       (custom table via `SetGamingFanTable`) only if M2 makes the table
       interpretable.

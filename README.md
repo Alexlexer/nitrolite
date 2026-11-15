@@ -39,13 +39,19 @@ cargo build --release
 ## Usage
 
 ```powershell
+nitro tray                            # tray icon: temps in tooltip, mode menu
 nitro status                          # raw values for all getters
-nitro temp                            # ACPI thermal zones in Celsius
+nitro temp                            # ACPI thermal zones + GPU temperature
+nitro mode                            # current operating mode
+nitro mode set quiet --dry-run        # show payload, write nothing
+nitro mode set performance            # write + verify (reverts on mismatch)
 nitro probe                           # sweep input selectors 0..0x20
 nitro raw GetGamingProfile 0          # single call, hex output
 nitro calibrate --seconds 90 --idle 20 --load
 nitro analyze captures\calib-*.jsonl  # which selectors actually move
 ```
+
+`tray`, `mode`, `temp` and `status` need elevation; `gpu`, `analyze` do not.
 
 `calibrate` and `analyze` are the M1 investigation tools: capture under load and
 see which values track it. `analyze` needs no elevation.
