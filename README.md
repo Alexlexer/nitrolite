@@ -15,11 +15,24 @@ nitrolite       ─────────────────────�
 
 ## Status
 
-**Phase 0 + M1 — read path working, first calibration done.** The protocol is
-mapped, the Rust client matches the PowerShell ground truth, and the M1 capture
-proved the Acer interface carries no thermal data (see below).
+**v0.2.0 — a working replacement.** Direct ACPI/WMI access with no NitroSense
+dependency, verified against hardware:
 
-Not yet: setters, UI, GPU temps. See [docs/PLAN.md](docs/PLAN.md).
+- operating mode: read *and* write, with read-back verification and automatic
+  revert if the EC does not take the value
+- CPU temperature from the ACPI thermal zone; GPU temperature, utilisation,
+  clock, power and VRAM from NVML
+- CPU load, memory and disk usage from documented Windows APIs
+- tray icon, and a full-screen TUI dashboard with mode-driven fan animation
+- ~22.8 MB private, ~0.3% of one core, versus NitroSense's ~600 MB across five
+  processes
+
+**Fan RPM is not readable on this hardware** — the data exists in an Acer service,
+but its transport is encrypted ([docs/PROTOCOL.md §11](docs/PROTOCOL.md)). The
+fans drawn in the UI are decoration driven by the selected mode, and no RPM figure
+is ever displayed.
+
+See [docs/PLAN.md](docs/PLAN.md) for what is left and why.
 
 > **Do not uninstall NitroSense yet.** It is the reference implementation until
 > `nitrolite` reaches parity.
@@ -141,6 +154,7 @@ docs/PROTOCOL.md  reverse-engineered protocol + captured samples
 ## License
 
 MIT
+
 
 
 

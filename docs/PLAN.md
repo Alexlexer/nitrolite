@@ -3,10 +3,10 @@
 Replacement for Acer NitroSense: a small Rust tray app that talks directly to the
 Acer ACPI gaming interface instead of running a 630 MB Electron stack.
 
-**Status:** Phase 0 and M1 complete — protocol mapped, read path working, first
-calibration capture analysed. **M1 overturned a core assumption:** the Acer
-interface carries no thermal data and probably no live fan RPM, so temperatures
-must come from `MSAcpi_ThermalZoneTemperature` (CPU) and NVML (GPU).
+**Status:** v0.2.0 — M1, M2, M3, M6, M6b-c complete. The tool is a working
+replacement: verified mode control, CPU/GPU temperatures, system gauges, tray icon
+and a dashboard TUI. The items still unchecked below are optional, and each says
+why it was not pursued.
 
 ---
 
@@ -194,5 +194,6 @@ nitrolite/
 ├── captures/            # raw calibration captures (gitignored)
 └── fixtures/            # trimmed captures used by unit tests (committed)
 ```
+
 
 
