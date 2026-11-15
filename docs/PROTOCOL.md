@@ -206,7 +206,7 @@ not carry **temperatures**, which is the claim that actually holds.
 `0x0A` was tested as a temperature candidate and rejected: it stayed at `83`
 through a 60 s load cycle while the ACPI zone moved 85–91 °C.
 
-## 4.4 Verdict on fan RPM
+### 4.4 Verdict on fan RPM
 
 Three independent routes checked, all closed on this model:
 
@@ -220,7 +220,7 @@ Fan RPM is therefore **not obtainable** through any interface investigated.
 Treat it as unavailable rather than leaving the question open; verification of
 fan writes must be behavioural (§Phase 2 in the plan).
 
-### Captured samples (idle, 2026-11-15)
+### 4.5 Captured samples (idle, 2026-11-15)
 
 | Call | Raw | Reading |
 |---|---|---|
@@ -255,7 +255,7 @@ established** — that is milestone M3.
 
 ---
 
-## 5. Setters — verified write path
+## 6. Setters — verified write path
 
 `SetGamingMiscSetting` takes one packed 64-bit word:
 
@@ -283,7 +283,7 @@ packing for *other* selectors (e.g. `0x07`, `0x08`, `0x0A`), and how
 `SetGamingFanBehavior` / `SetGamingProfile` encode their inputs. Those are `M3`
 follow-ups; nothing writes them yet.
 
-## 6. Named-pipe alternative (unused, documented for completeness)
+## 7. Named-pipe alternative (unused, documented for completeness)
 
 If we ever want to avoid admin without writing a service, Acer's own pipe
 protocol is the route. Prefixes seen: `predatorsense_hardware_service_`,
@@ -295,7 +295,7 @@ the goal of removing that stack.
 
 ---
 
-## 7. Reproduction
+## 8. Reproduction
 
 ```powershell
 # class metadata (no elevation needed)
@@ -313,8 +313,28 @@ Invoke-CimMethod -InputObject $i -MethodName GetGamingProfile -Arguments @{ gmIn
 nitro status
 ```
 
-## 8. Artifacts
+
+## 9. Artifacts
 
 Raw captures and string dumps are in `C:\DEV\nitro-re\` on the analysis machine
-(`strings-node.txt`, `sweep.log`, `instance-probe.log`, `status.out`). Not part of
-the repo.
+(`strings-node.txt`, `sweep.log`, `instance-probe.log`, `status.out`,
+`stack-independence.txt`). Not part of the repo.
+
+## 10. Dependency map — what `nitro` actually needs
+
+Verified by stopping things and re-running reads and writes:
+
+| Dependency | Required? | Evidence |
+|---|---|---|
+| NitroSense (Store app) | **No** | killed all 4 processes; reads, temps and verified writes all still worked |
+| `AASSvc` / `AcerHardwareService.exe` (Acer service stack) | **No** | stopped the service, confirmed `AcerHardwareService.exe` gone, then read **and wrote** mode successfully |
+| Acer ACPI **driver** component (`AcerDeviceEnablingServiceV2`, `acerdeviceenablingservicecomponent.inf`) | Presumed yes | not tested — stopping it risks leaving the ACPI device disabled until reboot |
+| ACPI firmware device `ACPI\PNP0C14\APGe_0` | **Yes** | this *is* the interface; enumerated from the firmware namespace by `acpi.sys`, not provided by any installed app |
+| `nvml.dll` (NVIDIA driver) | Optional | GPU temperature only; degrades to CPU-only without it |
+| Elevation | **Yes** | instance enumeration is admin-only (§4.2) |
+
+The Store app is a **client** of the interface we talk to, not a provider of it.
+Uninstalling NitroSense cannot remove a firmware ACPI device; uninstalling the
+Acer *drivers* might.
+
+
