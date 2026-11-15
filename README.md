@@ -1,3 +1,5 @@
+<img src="assets/nitrolite-256.png" width="96" align="right" alt="nitrolite icon">
+
 # nitrolite
 
 A minimal replacement for Acer NitroSense on the Nitro ANV15-51 (and hopefully
@@ -139,6 +141,7 @@ docs/PROTOCOL.md  reverse-engineered protocol + captured samples
 ## License
 
 MIT
+
 
 
 
