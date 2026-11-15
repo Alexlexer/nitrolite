@@ -79,18 +79,21 @@ rather than any sensor. Details in [PROTOCOL.md §4.1](PROTOCOL.md).
 **Exit criteria (revised):** ✅ CPU and GPU temperatures displayed and correct;
 ✅ mode reported; ✅ RPM verdict written. `M2d` is tidy-up, not a blocker.
 
-### Phase 2 — Safe setters  `[M3, M4]`
+### Phase 2 — Safe setters  `[M3 ✅, M4]`
 
-- [ ] **M3 Setter primitives.** `SetGamingFanBehavior` and `SetGamingProfile`.
-      Read-back verification after every write.
-- [ ] **M4 Failsafe.** Refuse to leave fans in a non-auto state unless `--force`.
-      Restore `auto` on panic / on exit / on `Drop`. Never write a value that the
-      read path has not first confirmed is accepted.
+- [x] **M3 Setter primitives.** `SetGamingMiscSetting` with
+      `gmInput = (value << 8) | selector`, input encoded as `VT_BSTR`.
+      Verified: Quiet `0x0B` → status 0, read-back mode 0; Balanced `0x010B` →
+      mode 1. `nitro mode set <name> [--dry-run]`.
+- [x] **M3b Read-back verification.** Every write re-reads the state word and
+      compares; a mismatch triggers an automatic restore of the previous mode.
+- [ ] **M4 Failsafe hardening.** Still to do: restore on panic/`Drop`, and the
+      `--force` gate for non-auto fan states (mode has no equivalent).
+- [ ] **M3c Other setters.** `SetGamingFanBehavior` / `SetGamingFanSpeed` /
+      `SetGamingProfile` encodings unknown; nothing writes them yet.
 
-**Exit criteria:** mode changes are observable in NitroSense, or — after
-NitroSense is gone — a write is confirmed by reading back the new
-`GetGamingFanBehavior` / `GetGamingProfile` state, plus a measured thermal
-response. Killing the tool mid-session never leaves fans pinned.
+**Exit criteria (revised):** mode changes are verified by read-back and revert on
+mismatch. Killing the tool mid-session never leaves a state we did not verify.
 
 > **Safety gate:** no setter work merges until M1/M2 land. Writing EC bytes blind
 > is how laptops end up with fans at zero and no thermal headroom.

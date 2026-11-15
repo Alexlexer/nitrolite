@@ -97,13 +97,23 @@ fn main() {
             calib::run(&wmi, &opts)
         }
         "watch" => watch(&wmi, &args),
-        "mode" => match wmi.get("GetGamingMiscSetting", 0x0B) {
-            Ok(raw) => {
-                let value = ((raw >> 8) & 0xFF) as u8;
-                println!("mode {value} ({})", mode_name(value));
-                Ok(())
+        "mode" => match args.get(1).map(String::as_str) {
+            None => match wmi.get("GetGamingMiscSetting", 0x0B) {
+                Ok(raw) => {
+                    let value = ((raw >> 8) & 0xFF) as u8;
+                    println!("mode {value} ({})", mode_name(value));
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            },
+            Some("set") => {
+                let name = args.get(2).map(String::as_str).unwrap_or("");
+                let dry_run = args.iter().any(|a| a == "--dry-run");
+                set_mode(&wmi, name, dry_run)
             }
-            Err(e) => Err(e),
+            Some(other) => Err(format!(
+                "unknown mode subcommand {other}; usage: nitro mode [set <quiet|balanced|performance> [--dry-run]]"
+            )),
         },
         other => {
             eprintln!("unknown command: {other}");
@@ -351,6 +361,69 @@ fn gpu_report() -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+const MISC_MODE_SELECTOR: u64 = 0x0B;
+
+fn read_mode(wmi: &AcerWmi) -> Result<u8, String> {
+    let raw = wmi.get("GetGamingMiscSetting", MISC_MODE_SELECTOR as u32)?;
+    Ok(((raw >> 8) & 0xFF) as u8)
+}
+
+/// Only the three user-selectable modes. ECO (6) is applied by the Acer service
+/// on adaptor change and is deliberately not settable here.
+fn mode_value(name: &str) -> Option<u8> {
+    match name.to_ascii_lowercase().as_str() {
+        "quiet" => Some(0),
+        "balanced" => Some(1),
+        "performance" => Some(4),
+        _ => None,
+    }
+}
+
+fn set_mode(wmi: &AcerWmi, name: &str, dry_run: bool) -> Result<(), String> {
+    let value = mode_value(name).ok_or_else(|| {
+        format!("unknown mode '{name}'; known: quiet, balanced, performance")
+    })?;
+
+    let current = read_mode(wmi)?;
+    println!("current mode: {current} ({})", mode_name(current));
+    if current == value {
+        println!("already {name} ({value}); nothing to do");
+        return Ok(());
+    }
+
+    // Setters pack (value << 8) | selector, mirroring the getter output layout.
+    let payload = ((value as u64) << 8) | MISC_MODE_SELECTOR;
+    println!(
+        "payload: 0x{payload:016X}  (selector 0x{MISC_MODE_SELECTOR:02X}, value {value})"
+    );
+
+    if dry_run {
+        println!("dry run: nothing written");
+        return Ok(());
+    }
+
+    let ret = wmi.set("SetGamingMiscSetting", payload)?;
+    println!(
+        "SetGamingMiscSetting accepted gmInput as {} and returned status {status}",
+        ret.encoding,
+        status = ret.status
+    );
+    std::thread::sleep(std::time::Duration::from_millis(400));
+
+    let after = read_mode(wmi)?;
+    if after == value {
+        println!("verified: mode {current} -> {after} ({name})");
+        Ok(())
+    } else {
+        // Never leave the machine in a state we did not verify.
+        let restore = ((current as u64) << 8) | MISC_MODE_SELECTOR;
+        let r = wmi.set("SetGamingMiscSetting", restore);
+        Err(format!(
+            "read-back mismatch: asked for {value}, got {after}; restore to {current} -> {r:?}"
+        ))
+    }
 }
 
 fn parse_num(s: &str) -> Option<u32> {

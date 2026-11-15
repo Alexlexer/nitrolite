@@ -188,6 +188,88 @@ impl AcerWmi {
             Ok(zones)
         }
     }
+    /// Invoke a `Set*` method: 64-bit packed input, 32-bit status out.
+    ///
+    /// Setters pack the selector and the value into one word; the layout is
+    /// discovered empirically and verified by reading the state back.
+    pub fn set(&self, method: &str, input: u64) -> Result<SetResult, String> {
+        unsafe {
+            let mut class_opt: Option<IWbemClassObject> = None;
+            self.services
+                .GetObject(
+                    &BSTR::from("AcerGamingFunction"),
+                    WBEM_GENERIC_FLAG_TYPE(0),
+                    None,
+                    Some(&mut class_opt),
+                    None,
+                )
+                .map_err(|e| format!("GetObject(AcerGamingFunction): {e}"))?;
+            let class = class_opt.ok_or("GetObject returned no class")?;
+
+            let mut in_sig: Option<IWbemClassObject> = None;
+            class
+                .GetMethod(&BSTR::from(method), 0, &mut in_sig, null_mut())
+                .map_err(|e| format!("GetMethod({method}): {e}"))?;
+            let in_sig =
+                in_sig.ok_or_else(|| format!("method {method} has no in-parameter class"))?;
+
+            let in_params = in_sig
+                .SpawnInstance(0)
+                .map_err(|e| format!("SpawnInstance: {e}"))?;
+
+            let label = put_input(&in_params, input)?;
+
+            let mut out_params: Option<IWbemClassObject> = None;
+            self.services
+                .ExecMethod(
+                    &BSTR::from(&self.object_path),
+                    &BSTR::from(method),
+                    WBEM_GENERIC_FLAG_TYPE(0),
+                    None,
+                    Some(&in_params),
+                    Some(&mut out_params),
+                    None,
+                )
+                .map_err(|e| format!("ExecMethod({method}) path={}: {e}", self.object_path))?;
+
+            let out_params = out_params.ok_or("ExecMethod returned no out params")?;
+            let mut out = VARIANT::default();
+            out_params
+                .Get(&BSTR::from("gmOutput"), 0, &mut out, None, None)
+                .map_err(|e| format!("Get(gmOutput): {e}"))?;
+
+            let status = variant_to_u64(&out).unwrap_or(0) as u32;
+            Ok(SetResult { encoding: label, status })
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct SetResult {
+    pub encoding: String,
+    pub status: u32,
+}
+
+/// The ACPI WMI mapper is inconsistent about integer VARIANT types: getters
+/// reject `VT_UI4`, and 64-bit setters reject both `VT_UI8` and `VT_I8`.
+/// Try the plausible encodings in order and report which one the provider took.
+fn put_input(in_params: &IWbemClassObject, input: u64) -> Result<String, String> {
+    let attempts: Vec<(&str, VARIANT)> = vec![
+        ("u64", VARIANT::from(input)),
+        ("i64", VARIANT::from(input as i64)),
+        ("bstr", VARIANT::from(BSTR::from(input.to_string()))),
+        ("u32", VARIANT::from(input as u32)),
+        ("i32", VARIANT::from(input as i32)),
+    ];
+
+    let mut errs = Vec::new();
+    for (label, value) in attempts {
+        match unsafe { in_params.Put(&BSTR::from("gmInput"), 0, &value, 0) } {
+            Ok(()) => return Ok(label.to_string()),
+            Err(e) => errs.push(format!("{label}: {e}")),
+        }
+    }
+    Err(format!("all VARIANT encodings rejected: {}", errs.join("; ")))
 }
 
 fn dump_props(obj: &IWbemClassObject) -> String {

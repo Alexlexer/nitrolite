@@ -74,7 +74,14 @@ This model reports `Lighting: {keyboard: false, lightbar: false, logo: false}` i
 3. **`Put(gmInput)` requires `VT_I4`.** The MOF declares `uint32`, but a
    `VT_UI4` VARIANT fails with `WBEM_E_TYPE_MISMATCH (0x80041005)`. Use `i32`.
 
-Confirmed workarounds live in [src/acer.rs](../src/acer.rs).
+4. **64-bit setter input requires `VT_BSTR`.** `SetGamingMiscSetting`'s `gmInput`
+   is declared `uint64`, but both `VT_UI8` and `VT_I8` fail with
+   `WBEM_E_TYPE_MISMATCH`. The provider accepts the **decimal string** form
+   (`bstr`). Getters already return BSTR for their 64-bit out-param, so the whole
+   64-bit path on this driver is string-encoded.
+
+Confirmed workarounds live in [src/acer.rs](../src/acer.rs); the setter path tries
+`u64 → i64 → bstr → u32 → i32` and reports which encoding was accepted.
 
 ---
 
@@ -247,6 +254,34 @@ The mapping from these names to `SetGamingProfile`'s u64 payload is **not yet
 established** — that is milestone M3.
 
 ---
+
+## 5. Setters — verified write path
+
+`SetGamingMiscSetting` takes one packed 64-bit word:
+
+```
+gmInput = (value << 8) | selector
+```
+
+Confirmed by writing the operating mode:
+
+| Action | Payload | Result |
+|---|---|---|
+| Quiet (0) | `0x000000000000000B` | status 0, read-back `0x0B` → mode 0 ✅ |
+| Balanced (1) | `0x000000000000010B` | status 0, read-back → mode 1 ✅ |
+
+The write is verified end-to-end: after writing, re-read `GetGamingMiscSetting(0x0B)`
+and compare. `nitro mode set` does exactly that and restores the previous mode if
+the read-back disagrees.
+
+`ECO` (6) is deliberately not settable: it is applied by the Acer service on
+adaptor change, and letting a user command request it invites a state the EC will
+overwrite anyway.
+
+Still unverified for setters: whether `SetGamingMiscSetting` uses the same
+packing for *other* selectors (e.g. `0x07`, `0x08`, `0x0A`), and how
+`SetGamingFanBehavior` / `SetGamingProfile` encode their inputs. Those are `M3`
+follow-ups; nothing writes them yet.
 
 ## 6. Named-pipe alternative (unused, documented for completeness)
 
