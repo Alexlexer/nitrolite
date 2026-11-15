@@ -81,16 +81,26 @@ fn mode_style(value: u8) -> &'static str {
     }
 }
 
-/// Decorative rotation rate, as a fraction of full speed. Presentation only.
-fn rotation_factor(mode: u8) -> f32 {
-    match mode {
-        0 => 0.15,
-        1 => 0.50,
-        4 => 1.00,
-        _ => 0.15,
+/// Rotation rate for a fan, as a fraction of full speed.
+///
+/// Driven by the measured RPM when the monitor service is available, so the
+/// blades reflect what the hardware is doing — the two fans can legitimately
+/// differ. Falls back to a mode-derived rate when there is no measurement, so
+/// the panel still animates rather than freezing.
+fn fan_factor(rpm: Option<u32>, mode: u8) -> f32 {
+    // ~6000 RPM is the highest observed under sustained load on this model.
+    const REFERENCE_RPM: f32 = 6000.0;
+
+    match rpm {
+        Some(rpm) if rpm > 0 => (rpm as f32 / REFERENCE_RPM).clamp(0.05, 1.0),
+        _ => match mode {
+            0 => 0.15,
+            1 => 0.50,
+            4 => 1.00,
+            _ => 0.15,
+        },
     }
 }
-
 /// LED ring style per mode: dim, moderate, bright red.
 fn led_style(mode: u8) -> &'static str {
     match mode {
@@ -895,7 +905,8 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
     let mut data = collect(None, wmi, nvml, &mut meter);
     data.monitor = fans.lock().ok().and_then(|g| g.clone());
 
-    let mut phase: f32 = 0.0;
+    let mut cpu_phase: f32 = 0.0;
+    let mut gpu_phase: f32 = 0.0;
     let mut pending: Option<Pending> = None;
     let mut dirty = true;
 
@@ -913,8 +924,11 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
     let mut last_refresh = Instant::now();
 
     loop {
-        let cpu_fan = fan_grid(phase);
-        let gpu_fan = fan_grid(phase + GPU_PHASE_OFFSET);
+        let cpu_factor = fan_factor(data.monitor.as_ref().and_then(|m| m.cpu_fan_rpm), data.mode);
+        let gpu_factor = fan_factor(data.monitor.as_ref().and_then(|m| m.gpu_fan_rpm), data.mode);
+
+        let cpu_fan = fan_grid(cpu_phase);
+        let gpu_fan = fan_grid(gpu_phase + GPU_PHASE_OFFSET);
 
         let changed = match &previous {
             Some((c, g)) => *c != cpu_fan || *g != gpu_fan,
@@ -927,7 +941,8 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
         }
 
         if animating {
-            phase = (phase + BASE_ROTATION * rotation_factor(data.mode)) % std::f32::consts::TAU;
+            cpu_phase = (cpu_phase + BASE_ROTATION * cpu_factor) % std::f32::consts::TAU;
+            gpu_phase = (gpu_phase + BASE_ROTATION * gpu_factor) % std::f32::consts::TAU;
         }
 
         if let Some(mut p) = pending.take() {
@@ -953,7 +968,7 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
         let tick = if !animating {
             Duration::from_millis(500)
         } else {
-            match rotation_factor(data.mode) {
+            match cpu_factor.max(gpu_factor) {
                 f if f >= 0.9 => Duration::from_millis(80),
                 f if f >= 0.4 => Duration::from_millis(160),
                 _ => Duration::from_millis(300),
@@ -1079,14 +1094,29 @@ mod tests {
     }
 
     #[test]
-    fn rotation_speed_is_mode_derived_only() {
-        assert!((rotation_factor(0) - 0.15).abs() < f32::EPSILON);
-        assert!((rotation_factor(1) - 0.50).abs() < f32::EPSILON);
-        assert!((rotation_factor(4) - 1.00).abs() < f32::EPSILON);
-        assert!((rotation_factor(6) - 0.15).abs() < f32::EPSILON);
-        assert!((rotation_factor(255) - 0.15).abs() < f32::EPSILON);
+    fn rotation_follows_measured_rpm() {
+        // A faster fan must rotate faster, and the mode must not override the
+        // measurement.
+        let slow = fan_factor(Some(1000), 4);
+        let fast = fan_factor(Some(5000), 0);
+        assert!(slow < fast, "slow={slow} fast={fast}");
+        assert_eq!(fan_factor(Some(3000), 0), fan_factor(Some(3000), 4));
     }
 
+    #[test]
+    fn rotation_falls_back_to_mode_without_a_measurement() {
+        assert!((fan_factor(None, 0) - 0.15).abs() < f32::EPSILON);
+        assert!((fan_factor(None, 1) - 0.50).abs() < f32::EPSILON);
+        assert!((fan_factor(None, 4) - 1.00).abs() < f32::EPSILON);
+        assert!((fan_factor(Some(0), 0) - 0.15).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn rotation_is_bounded() {
+        // Absurd input must not spin the graphic off the scale.
+        assert!(fan_factor(Some(1), 1) >= 0.05);
+        assert!(fan_factor(Some(99_999), 0) <= 1.0);
+    }
     #[test]
     fn led_ring_gets_brighter_with_mode() {
         assert_eq!(led_style(0), "2;31");
@@ -1109,11 +1139,10 @@ mod tests {
         assert!(frames.len() > 1, "rotation must actually change the frame");
     }
 
-    /// The animation must move faster in faster modes. Measuring phase advance
-    /// is the honest assertion: counting distinct frames saturates once the
-    /// braille grid is fine enough that every step differs.
+    /// Two fans at different measured speeds must advance at different rates —
+    /// that is the whole point of syncing the animation to RPM.
     #[test]
-    fn animation_speed_scales_with_mode() {
+    fn fans_at_different_rpm_advance_differently() {
         fn advance(factor: f32, ticks: usize) -> f32 {
             let mut phase = 0.0f32;
             for _ in 0..ticks {
@@ -1122,17 +1151,10 @@ mod tests {
             phase
         }
 
-        let quiet = advance(rotation_factor(0), 10);
-        let balanced = advance(rotation_factor(1), 10);
-        let performance = advance(rotation_factor(4), 10);
-
-        assert!(quiet < balanced, "quiet={quiet} balanced={balanced}");
-        assert!(
-            balanced < performance,
-            "balanced={balanced} performance={performance}"
-        );
-        // Performance must be exactly 1/0.15x the quiet advance.
-        assert!((performance / quiet - 1.0 / 0.15).abs() < 0.01);
+        let cpu = advance(fan_factor(Some(5000), 1), 10);
+        let gpu = advance(fan_factor(Some(1500), 1), 10);
+        assert!(cpu > gpu, "cpu={cpu} gpu={gpu}");
+        assert!((cpu / gpu - 5000.0 / 1500.0).abs() < 0.01);
     }
     #[test]
     fn fans_are_not_in_lockstep() {
