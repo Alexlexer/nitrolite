@@ -96,6 +96,7 @@ fn main() {
             let opts = parse_calib_opts(&args);
             calib::run(&wmi, &opts)
         }
+        "watch" => watch(&wmi, &args),
         other => {
             eprintln!("unknown command: {other}");
             eprintln!("usage: nitro [status|probe|raw|calibrate|analyze]");
@@ -248,6 +249,56 @@ fn probe(wmi: &AcerWmi) -> Result<(), String> {
             }
         }
     }
+    Ok(())
+}
+
+/// Poll the interesting words and print a line only when something changes.
+/// Used to observe what an external mode switch (NitroSense UI) does to the
+/// ACPI state, which is how we map mode names to values without writing.
+fn watch(wmi: &AcerWmi, args: &[String]) -> Result<(), String> {
+    let seconds: u64 = args
+        .iter()
+        .position(|a| a == "--seconds")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(120);
+    let interval_ms: u64 = args
+        .iter()
+        .position(|a| a == "--interval-ms")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(500);
+
+    println!("watching for {seconds}s (changes only)\n");
+
+    let probes: [(&str, &[u32]); 4] = [
+        ("GetGamingProfile", &[0]),
+        ("GetGamingFanBehavior", &[1, 3]),
+        ("GetGamingFanSpeed", &[1, 4]),
+        ("GetGamingSysInfo", &[0, 1, 2]),
+    ];
+
+    let start = std::time::Instant::now();
+    let mut prev: Option<String> = None;
+
+    while start.elapsed() < std::time::Duration::from_secs(seconds) {
+        let mut parts = Vec::new();
+        for (method, sels) in probes {
+            for sel in sels {
+                if let Ok(raw) = wmi.get(method, *sel) {
+                    parts.push(format!("{method}({sel})={raw:#018X}"));
+                }
+            }
+        }
+        let line = parts.join("  ");
+        if prev.as_deref() != Some(line.as_str()) {
+            println!("[{:>5}s] {line}", start.elapsed().as_secs());
+            prev = Some(line);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(interval_ms));
+    }
+
+    println!("\nwatch finished");
     Ok(())
 }
 
