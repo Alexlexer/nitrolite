@@ -1,0 +1,14 @@
+# Build artifacts
+/target
+**/*.rs.bk
+*.pdb
+
+# Calibration captures (machine-specific, regenerate with `nitro calibrate`)
+/captures
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
