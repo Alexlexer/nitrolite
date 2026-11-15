@@ -5,6 +5,9 @@ edition = "2021"
 description = "Minimal replacement for Acer NitroSense: direct ACPI/WMI fan + thermal control"
 license = "MIT"
 
+[build-dependencies]
+winresource = "0.1"
+
 [dependencies]
 windows = { version = "0.58", features = [
     "Win32_Foundation",
@@ -28,6 +31,7 @@ crossterm = "0.28"
 [[bin]]
 name = "nitrolite"
 path = "src/main.rs"
+
 
 
 
