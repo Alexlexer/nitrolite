@@ -58,10 +58,11 @@ vanish — so run those from an elevated terminal.
 
 The TUI fills the terminal with panels: CPU and GPU gauges with sparklines,
 memory and storage bars, a temperature history chart, and a cooling panel with
-two fans. The fans **rotate decoratively** — rotation speed follows the selected
-mode (Quiet 15%, Balanced 50%, Performance 100%) and the LED ring brightens with
-it — while the **RPM numbers beneath them are measured**. When the monitor
-service is unavailable the panel says so rather than showing a placeholder.
+two fans whose blades are driven by the **measured RPM** — the CPU and GPU fans
+spin independently at their own speeds, so a hot GPU visibly outpaces an idle
+CPU. When the monitor service is unavailable the rotation falls back to the
+selected mode and the panel says "service unavailable" rather than inventing a
+number.
 
 The TUI never scrolls: it draws in the alternate screen, adapts to the terminal
 height, and restores your scrollback on exit.
@@ -172,4 +173,5 @@ tools/make_icon.py  regenerates assets/nitrolite.ico
 ## License
 
 MIT
+
 
