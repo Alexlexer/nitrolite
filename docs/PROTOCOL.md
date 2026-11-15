@@ -165,14 +165,30 @@ both our recorder and NitroSense's own log:
 | Mode | Value | Evidence |
 |---|---|---|
 | Quiet | **0** | switched Performance→Balanced→Quiet, `0x0B` went 4→1→0 |
-| Balanced | **1** | same sequence |
+| Balanced | **1** | same sequence (the app calls this `DEFAULT` internally) |
 | Performance | **4** | same sequence |
-| Turbo | **6** *(tentative)* | only ever-present in the app's `OPERATING_MODE` log (never confirmed live) |
+| ECO | **6** | automatic, not user-selectable — see below |
 
-Every `OPERATING_MODE` value in the app's whole log history is drawn from
-`{0, 1, 4, 6}` — nothing else, in ~200 occurrences. That is what makes `6` the
-Turbo candidate, but it has not been observed directly and `nitro mode` reports
-it as unconfirmed.
+There is **no Turbo** on this model: the app exposes only Quiet, Balanced and
+Performance, and the model profile carries `ModeSwitchKey: false`. An earlier
+draft of these notes guessed `6` was Turbo; that was wrong.
+
+`6` is ECO, the mode the Acer service applies on power-source change. Every one
+of the 82 occurrences in the log follows the same pattern:
+
+```
+LockMode: AdaptorChange, newMode: ECO, oldMode: DEFAULT
+[FUNCRW] setModeWithoutScenario_And_RefreshUI ===== getData(): 1, mode: 6
+setDataWithoutScenario: OPERATING_MODE,v:6
+```
+
+That matches `"ACDCModeSet": true` in `win32\Nitro\Nitro ANV15-51.json`: pick up
+the charger or drop to battery and the mode changes itself. Any replacement must
+either reproduce this or explicitly opt out — leaving it unimplemented means the
+OS/EC will still switch underneath us and `nitro mode` will report ECO.
+
+All `OPERATING_MODE` values across the log's history are drawn from
+`{0, 1, 4, 6}` — three user-selectable modes plus ECO.
 
 **Correction to §4.1:** the earlier conclusion that "the Acer interface carries
 no live state" was too strong. The Phase-1 probe set covered `Profile`,

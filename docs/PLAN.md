@@ -66,9 +66,9 @@ rather than any sensor. Details in [PROTOCOL.md §4.1](PROTOCOL.md).
       (`nitro temp`, verified 55→91 °C under load), GPU via NVML (`nitro gpu`,
       verified against `nvidia-smi`).
 - [x] **M2b Mode mapping.** `GetGamingMiscSetting(0x0B)` is the operating mode:
-      `0` Quiet, `1` Balanced, `4` Performance, `6` Turbo (tentative).
-      `nitro mode` reports it. Established read-only, by correlating a
-      user-driven switch with NitroSense's own log — no EC writes.
+      `0` Quiet, `1` Balanced, `4` Performance, `6` ECO (automatic on battery —
+      this model has no Turbo). `nitro mode` reports it. Established read-only,
+      by correlating user-driven switches with NitroSense's own log — no EC writes.
 - [x] **M2c Fan RPM verdict.** Unavailable: `GetGamingFanSpeed` is constant and
       selector-bit-driven, NVML reports `N/A`, no other getter exposes a
       tachometer. Closed rather than left open.
@@ -159,7 +159,10 @@ incident, no manual intervention needed.
 3. Is `GetGamingProfile(0) = 0x00FF000001000000` a profile pinion (`0xFF` marker)
    or two packed fields?
 4. Does the Turbo key (`ModeSwitchKey: false` on this model) route through
-   `SetGamingMiscSetting`?
+   `SetGamingMiscSetting`? **Resolved: there is no Turbo on this model.** `6` is
+   ECO, applied automatically on adaptor change (`ACDCModeSet: true`). A
+   replacement must decide whether to reproduce that AC/DC switching —
+   otherwise it happens underneath us anyway.
 5. Is `SetGamingFanTable` usable, or does it need the EC's factory curve format?
 
 ## 8. Repo layout

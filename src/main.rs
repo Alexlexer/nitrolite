@@ -314,15 +314,16 @@ fn watch(wmi: &AcerWmi, args: &[String]) -> Result<(), String> {
 
 /// Operating mode, as reported by `GetGamingMiscSetting(0x0B)`.
 ///
-/// Mapping established by observing NitroSense mode switches against
-/// `OPERATING_MODE` in its own log (see docs/PROTOCOL.md §4.3):
-///   0 = Quiet, 1 = Balanced, 4 = Performance, 6 = (Turbo, tentative)
+/// Only three modes are user-selectable on the Nitro V 15 (`ModeSwitchKey: false`
+/// in the model profile — there is no Turbo). `6` is ECO, the mode the Acer
+/// service switches to automatically on adaptor change / battery.
+/// Evidence: docs/PROTOCOL.md §4.3.
 fn mode_name(value: u8) -> &'static str {
     match value {
         0 => "Quiet",
         1 => "Balanced",
         4 => "Performance",
-        6 => "Turbo (unconfirmed)",
+        6 => "ECO (battery)",
         _ => "Unknown",
     }
 }
