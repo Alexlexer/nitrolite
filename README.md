@@ -41,6 +41,12 @@ shortcuts). One-shot commands (`mode`, `temp`, `status`) do **not** self-elevate
 an elevated child gets its own console and its output would vanish — so run those
 from an elevated terminal.
 
+The TUI shows two animated fans — CPU and GPU. They are **decoration**: rotation
+speed follows the selected mode (Quiet 15%, Balanced 50%, Performance 100%), the
+LED ring brightens with it, and the active mode is printed underneath. No RPM
+figure is displayed, estimated or implied, because this machine exposes no fan
+tachometer to userland ([docs/PROTOCOL.md §11](docs/PROTOCOL.md)). A fabricated
+number would be worse than no number.
 The TUI does not scroll: it draws in the alternate screen, adapts to the terminal
 height, and restores your scrollback on exit.
 ## Build
@@ -131,6 +137,7 @@ docs/PROTOCOL.md  reverse-engineered protocol + captured samples
 ## License
 
 MIT
+
 
 
 
