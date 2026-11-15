@@ -23,7 +23,7 @@ Working, verified on hardware:
   revert if the EC does not take the value.
 - **Fan speed** — real RPM for CPU, GPU and SYS from Acer's monitor service
   ([§11](docs/PROTOCOL.md)). No estimates, no decoration in the numbers.
-- **Temperatures** — CPU from the ACPI thermal zone, GPU from NVML (temperature,
+- **Temperatures** — CPU from the monitor service sensor (the ACPI thermal zone as fallback; it is coarse and can sit on one value for minutes), GPU from NVML (temperature,
   utilisation, clock, power, VRAM).
 - **System gauges** — CPU load, memory, disk.
 - **AC/DC follow** — ECO engages when the charger is removed and your chosen mode
@@ -173,5 +173,6 @@ tools/make_icon.py  regenerates assets/nitrolite.ico
 ## License
 
 MIT
+
 
 

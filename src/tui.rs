@@ -277,8 +277,19 @@ fn paint_cells(cells: &[(char, bool)], led: &'static str) -> String {
 
 // ------------------------------------------------------------------- model
 
+/// Where the displayed CPU temperature came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum CpuSource {
+    /// The ACPI thermal zone: coarse and slow-updating, but always present.
+    #[default]
+    AcpiZone,
+    /// The monitor service sensor: the one the vendor UI showed, and it moves.
+    Service,
+}
+
 struct Data {
     mode: u8,
+    cpu_source: CpuSource,
     /// Real fan speeds, when the Acer monitor service is reachable.
     monitor: Option<crate::monitor::Monitor>,
     /// `Some(false)` while running on battery, where ECO is a real choice.
@@ -292,18 +303,38 @@ struct Data {
     status: String,
 }
 
+/// Choose the CPU temperature to display.
+///
+/// The ACPI zone is coarse: measured over 30 s it sat on a single value while
+/// the monitor service moved across five degrees. So the live sensor wins, and
+/// the zone is only a fallback for when the service is unavailable.
+fn pick_cpu_temp(
+    zone: Option<f64>,
+    monitor: Option<&crate::monitor::Monitor>,
+) -> (Option<f64>, CpuSource) {
+    match monitor.and_then(|m| m.cpu_temp_c) {
+        Some(t) => (Some(t), CpuSource::Service),
+        None => (zone, CpuSource::AcpiZone),
+    }
+}
+
 fn collect(
     previous: Option<&Data>,
     wmi: &AcerWmi,
     nvml: Option<&Nvml>,
     meter: &mut SysMeter,
+    monitor: Option<&crate::monitor::Monitor>,
 ) -> Data {
     let mode = wmi
         .get("GetGamingMiscSetting", MODE_SELECTOR)
         .map(|raw| ((raw >> 8) & 0xFF) as u8)
         .unwrap_or(255);
 
-    let cpu_temp = wmi.thermal_zones().ok().and_then(|z| z.first().copied());
+    // The ACPI zone is coarse (it can sit on the same value for minutes), so
+    // prefer the monitor service sensor, which tracks the hardware. Fall back
+    // to the zone when the service is unavailable.
+    let zone = wmi.thermal_zones().ok().and_then(|z| z.first().copied());
+    let (cpu_temp, cpu_source) = pick_cpu_temp(zone, monitor);
 
     let gpu = nvml
         .and_then(|n| n.read_all().ok())
@@ -334,6 +365,7 @@ fn collect(
 
     Data {
         mode,
+        cpu_source,
         monitor: None, // filled from the background poller by the caller
         on_ac: wmi.power_online(),
         cpu_temp,
@@ -623,8 +655,12 @@ fn dashboard(
         (" ", ""),
         (&gpu_line, ""),
     ]));
+    let source = match data.cpu_source {
+        CpuSource::Service => "service",
+        CpuSource::AcpiZone => "ACPI zone",
+    };
     let legend = format!(
-        "  CPU {}   GPU {}   (last {} samples)",
+        "  CPU {} ({source})   GPU {}   (last {} samples)",
         data.cpu_temp
             .map(|t| format!("{t:.1} C"))
             .unwrap_or_else(|| "n/a".into()),
@@ -858,9 +894,10 @@ pub fn run_once(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
     init_console();
     let mut meter = SysMeter::new();
     let _ = meter.sample();
-    let mut data = collect(None, wmi, nvml, &mut meter);
-    // One-shot render: read the fans synchronously (the service takes ~700 ms).
-    data.monitor = crate::monitor::read();
+    // One-shot render: read the service synchronously (it takes ~700 ms).
+    let snapshot = crate::monitor::read();
+    let mut data = collect(None, wmi, nvml, &mut meter, snapshot.as_ref());
+    data.monitor = snapshot;
 
     let mut out = io::stdout();
     let cpu_fan = fan_grid(0.0);
@@ -918,8 +955,9 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
     let mut meter = SysMeter::new();
     let _ = meter.sample();
     let fans = crate::monitor::shared(Duration::from_secs(1));
-    let mut data = collect(None, wmi, nvml, &mut meter);
-    data.monitor = fans.lock().ok().and_then(|g| g.clone());
+    let snapshot = fans.lock().ok().and_then(|g| g.clone());
+    let mut data = collect(None, wmi, nvml, &mut meter, snapshot.as_ref());
+    data.monitor = snapshot;
 
     let mut cpu_phase: f32 = 0.0;
     let mut gpu_phase: f32 = 0.0;
@@ -1039,8 +1077,9 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
 
         if last_refresh.elapsed() >= Duration::from_millis(500) {
             let status = std::mem::take(&mut data.status);
-            data = collect(Some(&data), wmi, nvml, &mut meter);
-            data.monitor = fans.lock().ok().and_then(|g| g.clone());
+            let snapshot = fans.lock().ok().and_then(|g| g.clone());
+            data = collect(Some(&data), wmi, nvml, &mut meter, snapshot.as_ref());
+            data.monitor = snapshot;
             data.status = status;
 
             // The power source changes on human timescales, not 500 ms ones.
@@ -1061,7 +1100,10 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
                             if wmi.set("SetGamingMiscSetting", payload).is_ok() {
                                 std::thread::sleep(Duration::from_millis(400));
                                 let status = std::mem::take(&mut data.status);
-                                data = collect(Some(&data), wmi, nvml, &mut meter);
+                                let snapshot = fans.lock().ok().and_then(|g| g.clone());
+                                data =
+                                    collect(Some(&data), wmi, nvml, &mut meter, snapshot.as_ref());
+                                data.monitor = snapshot;
                                 data.status = status;
                             }
                         }
@@ -1092,6 +1134,7 @@ mod tests {
     fn sample_data() -> Data {
         Data {
             mode: 1,
+            cpu_source: CpuSource::Service,
             monitor: Some(crate::monitor::Monitor {
                 cpu_fan_rpm: Some(4000),
                 gpu_fan_rpm: Some(3500),
@@ -1235,6 +1278,31 @@ mod tests {
     /// RPM is shown only when the monitor service supplied it. The old rule was
     /// "never show RPM" because the number would have been invented; now it is
     /// real, so the rule is "never show a made-up number".
+    fn monitor_with_cpu(temp: f64) -> crate::monitor::Monitor {
+        crate::monitor::Monitor {
+            cpu_temp_c: Some(temp),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn live_sensor_wins_over_the_acpi_zone() {
+        let (value, source) = pick_cpu_temp(Some(86.1), Some(&monitor_with_cpu(82.0)));
+        assert_eq!(value, Some(82.0));
+        assert_eq!(source, CpuSource::Service);
+    }
+
+    #[test]
+    fn acpi_zone_is_the_fallback_when_the_service_is_absent() {
+        let (value, source) = pick_cpu_temp(Some(86.1), None);
+        assert_eq!(value, Some(86.1));
+        assert_eq!(source, CpuSource::AcpiZone);
+
+        // Service present but without a CPU sensor: still fall back.
+        let (value, source) = pick_cpu_temp(Some(86.1), Some(&crate::monitor::Monitor::default()));
+        assert_eq!(value, Some(86.1));
+        assert_eq!(source, CpuSource::AcpiZone);
+    }
     #[test]
     fn real_rpm_is_displayed_when_the_service_supplies_it() {
         let data = sample_data();
