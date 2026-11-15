@@ -748,18 +748,34 @@ fn draw(
         compact(data, cpu_fan, gpu_fan)
     };
 
-    queue!(out, MoveTo(0, 0))?;
+    // Build the whole frame in one buffer, then emit it with a single write.
+    // Per-line writes cost a syscall each; a frame is ~30 lines at ~10 fps.
+    let mut buf = Vec::with_capacity(4096);
+    let ansi = ANSI.load(Ordering::Relaxed);
+
+    // DECSET 2026: ask the terminal to hold the frame until it is complete, so
+    // it never paints a half-updated screen.
+    if ansi {
+        buf.extend_from_slice(b"\x1b[?2026h");
+    }
+
     for (i, line) in lines.iter().enumerate().take(h) {
-        queue!(out, MoveTo(0, i as u16))?;
-        write!(out, "{line}")?;
+        queue!(buf, MoveTo(0, i as u16))?;
+        buf.extend_from_slice(line.as_bytes());
     }
+    let blank: String = " ".repeat(w);
     for i in lines.len().min(h)..h {
-        queue!(out, MoveTo(0, i as u16))?;
-        write!(out, "{}", " ".repeat(w))?;
+        queue!(buf, MoveTo(0, i as u16))?;
+        buf.extend_from_slice(blank.as_bytes());
     }
+
+    if ansi {
+        buf.extend_from_slice(b"\x1b[?2026l");
+    }
+
+    out.write_all(&buf)?;
     out.flush()
 }
-
 /// Fallback for terminals too small for the dashboard.
 fn compact(
     data: &Data,
@@ -912,6 +928,7 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
 
     // AC/DC follow: ECO on battery, the user's choice on AC.
     let mut last_ac: Option<bool> = None;
+    let mut power_checked_at: Option<Instant> = None;
     let mut preferred: u8 = if data.mode == crate::power::ECO {
         1
     } else {
@@ -1026,23 +1043,31 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
             data.monitor = fans.lock().ok().and_then(|g| g.clone());
             data.status = status;
 
-            if let Some(on_ac) = wmi.power_online() {
-                let event = crate::power::classify(last_ac, on_ac);
-                if last_ac.is_some() {
-                    if event == crate::power::Event::Unplugged && data.mode != crate::power::ECO {
-                        preferred = data.mode;
-                    }
-                    if let Some(target) = crate::power::mode_for(event, preferred) {
-                        let payload = ((target as u64) << 8) | MODE_SELECTOR as u64;
-                        if wmi.set("SetGamingMiscSetting", payload).is_ok() {
-                            std::thread::sleep(Duration::from_millis(400));
-                            let status = std::mem::take(&mut data.status);
-                            data = collect(Some(&data), wmi, nvml, &mut meter);
-                            data.status = status;
+            // The power source changes on human timescales, not 500 ms ones.
+            let check_power = power_checked_at
+                .map(|at: Instant| at.elapsed() >= Duration::from_secs(2))
+                .unwrap_or(true);
+            if check_power {
+                if let Some(on_ac) = wmi.power_online() {
+                    power_checked_at = Some(Instant::now());
+                    let event = crate::power::classify(last_ac, on_ac);
+                    if last_ac.is_some() {
+                        if event == crate::power::Event::Unplugged && data.mode != crate::power::ECO
+                        {
+                            preferred = data.mode;
+                        }
+                        if let Some(target) = crate::power::mode_for(event, preferred) {
+                            let payload = ((target as u64) << 8) | MODE_SELECTOR as u64;
+                            if wmi.set("SetGamingMiscSetting", payload).is_ok() {
+                                std::thread::sleep(Duration::from_millis(400));
+                                let status = std::mem::take(&mut data.status);
+                                data = collect(Some(&data), wmi, nvml, &mut meter);
+                                data.status = status;
+                            }
                         }
                     }
+                    last_ac = Some(on_ac);
                 }
-                last_ac = Some(on_ac);
             }
             last_refresh = Instant::now();
             dirty = true;
