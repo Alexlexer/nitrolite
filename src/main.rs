@@ -2,6 +2,7 @@ mod acer;
 mod calib;
 mod elevate;
 mod nvml;
+mod sysinfo;
 mod tray;
 mod tui;
 
