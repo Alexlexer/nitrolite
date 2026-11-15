@@ -41,7 +41,9 @@ shortcuts). One-shot commands (`mode`, `temp`, `status`) do **not** self-elevate
 an elevated child gets its own console and its output would vanish — so run those
 from an elevated terminal.
 
-The TUI shows two animated fans — CPU and GPU. They are **decoration**: rotation
+The TUI is a full-screen dashboard: CPU and GPU panels with live gauges and
+sparklines, memory and storage bars, a temperature history chart, and a cooling
+panel with two animated fans. It shows two animated fans — CPU and GPU. They are **decoration**: rotation
 speed follows the selected mode (Quiet 15%, Balanced 50%, Performance 100%), the
 LED ring brightens with it, and the active mode is printed underneath. No RPM
 figure is displayed, estimated or implied, because this machine exposes no fan
@@ -137,6 +139,7 @@ docs/PROTOCOL.md  reverse-engineered protocol + captured samples
 ## License
 
 MIT
+
 
 
 
