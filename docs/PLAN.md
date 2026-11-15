@@ -62,18 +62,22 @@ rather than any sensor. Details in [PROTOCOL.md §4.1](PROTOCOL.md).
 
 - [x] **M1 Calibration harness.** `nitro calibrate` samples every getter into
       JSONL under optional load; `nitro analyze` reports which selectors move.
-- [ ] **M2 Revised decode.** Scope is now smaller and different:
-  - [ ] Real temperature sources: CPU via `MSAcpi_ThermalZoneTemperature`
-        (working, elevated), GPU via NVML.
-  - [ ] `GetGamingProfile` / `GetGamingFanBehavior` semantics: what do
-        `0x00FF000001000000`, `0x100`, `0x4000`, `0x4100` mean, and which are
-        profile vs fan-curve state?
-  - [ ] Determine whether live fan RPM is available at all. If not, close the
-        question explicitly rather than leaving it open.
+- [x] **M2 Real temperature sources.** CPU via `MSAcpi_ThermalZoneTemperature`
+      (`nitro temp`, verified 55→91 °C under load), GPU via NVML (`nitro gpu`,
+      verified against `nvidia-smi`).
+- [x] **M2b Mode mapping.** `GetGamingMiscSetting(0x0B)` is the operating mode:
+      `0` Quiet, `1` Balanced, `4` Performance, `6` Turbo (tentative).
+      `nitro mode` reports it. Established read-only, by correlating a
+      user-driven switch with NitroSense's own log — no EC writes.
+- [x] **M2c Fan RPM verdict.** Unavailable: `GetGamingFanSpeed` is constant and
+      selector-bit-driven, NVML reports `N/A`, no other getter exposes a
+      tachometer. Closed rather than left open.
+- [ ] **M2d Remaining odd words.** `GetGamingProfile(0) = 0x00FF000001000000`,
+      `FanBehavior` `0x100`/`0x4000`/`0x4100` — none change with mode or load.
+      Decide whether they are capability bitfields (ignore) or something else.
 
-**Exit criteria (revised):** CPU and GPU temperatures displayed and correct at
-idle and under load; profile/behaviour values mapped to the four known mode
-names; a written verdict on whether fan RPM is obtainable.
+**Exit criteria (revised):** ✅ CPU and GPU temperatures displayed and correct;
+✅ mode reported; ✅ RPM verdict written. `M2d` is tidy-up, not a blocker.
 
 ### Phase 2 — Safe setters  `[M3, M4]`
 

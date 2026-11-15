@@ -147,6 +147,56 @@ stays readable either way, which is what makes this confusing to discover.
 
 Net effect: **the whole tool needs elevation**, not just the fan writes.
 
+### 4.3 Operating mode — solved (M2)
+
+`GetGamingMiscSetting` is where the live state actually lives. Its valid
+selectors are sparse:
+
+| Selector | Value seen | Meaning |
+|---|---|---|
+| `0x07` | `0xFF` (255) | constant so far — likely "auto" / unlimited |
+| `0x08` | `1` | constant so far |
+| `0x0A` | `83` | constant under load — **not** a temperature (see below) |
+| **`0x0B`** | **0 / 1 / 4 / 6** | **operating mode** |
+
+Mode mapping, established by correlating a user-driven switch in NitroSense with
+both our recorder and NitroSense's own log:
+
+| Mode | Value | Evidence |
+|---|---|---|
+| Quiet | **0** | switched Performance→Balanced→Quiet, `0x0B` went 4→1→0 |
+| Balanced | **1** | same sequence |
+| Performance | **4** | same sequence |
+| Turbo | **6** *(tentative)* | only ever-present in the app's `OPERATING_MODE` log (never confirmed live) |
+
+Every `OPERATING_MODE` value in the app's whole log history is drawn from
+`{0, 1, 4, 6}` — nothing else, in ~200 occurrences. That is what makes `6` the
+Turbo candidate, but it has not been observed directly and `nitro mode` reports
+it as unconfirmed.
+
+**Correction to §4.1:** the earlier conclusion that "the Acer interface carries
+no live state" was too strong. The Phase-1 probe set covered `Profile`,
+`FanBehavior`, `FanSpeed`, `SysInfo` — none of which change with mode — and
+missed `MiscSetting` entirely. The interface does carry live state; it just does
+not carry **temperatures**, which is the claim that actually holds.
+
+`0x0A` was tested as a temperature candidate and rejected: it stayed at `83`
+through a 60 s load cycle while the ACPI zone moved 85–91 °C.
+
+## 4.4 Verdict on fan RPM
+
+Three independent routes checked, all closed on this model:
+
+1. `GetGamingFanSpeed` — constant `100` under load, and responds to selector
+   *bit patterns* rather than indices (see §4.1).
+2. `nvmlDeviceGetFanSpeed` — returns `N/A`; the chassis fans are on the EC, not
+   the GPU.
+3. No other Acer getter exposes a tachometer value.
+
+Fan RPM is therefore **not obtainable** through any interface investigated.
+Treat it as unavailable rather than leaving the question open; verification of
+fan writes must be behavioural (§Phase 2 in the plan).
+
 ### Captured samples (idle, 2026-11-15)
 
 | Call | Raw | Reading |
