@@ -24,6 +24,9 @@ dependency, verified against hardware:
   clock, power and VRAM from NVML
 - CPU load, memory and disk usage from documented Windows APIs
 - tray icon, and a full-screen TUI dashboard with mode-driven fan animation
+- AC/DC follow: ECO is applied when the charger is removed and your chosen mode
+  is restored when it comes back (this logic lived in NitroSense, not the Acer
+  service stack)
 - ~22.8 MB private, ~0.3% of one core, versus NitroSense's ~600 MB across five
   processes
 
@@ -154,6 +157,7 @@ docs/PROTOCOL.md  reverse-engineered protocol + captured samples
 ## License
 
 MIT
+
 
 
 

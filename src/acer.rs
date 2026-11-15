@@ -143,6 +143,33 @@ impl AcerWmi {
             }
         }
     }
+    /// Whether the machine is on AC power (`root\WMI : BatteryStatus`).
+    pub fn power_online(&self) -> Option<bool> {
+        unsafe {
+            let enumerator = self
+                .services
+                .ExecQuery(
+                    &BSTR::from("WQL"),
+                    &BSTR::from("SELECT * FROM BatteryStatus"),
+                    WBEM_GENERIC_FLAG_TYPE(0),
+                    None,
+                )
+                .ok()?;
+
+            let mut objects: [Option<IWbemClassObject>; 1] = [None];
+            let mut returned = 0u32;
+            let hr = enumerator.Next(500, &mut objects, &mut returned);
+            if hr.is_err() || returned == 0 {
+                return None;
+            }
+
+            let obj = objects[0].take()?;
+            let mut value = VARIANT::default();
+            obj.Get(&BSTR::from("PowerOnline"), 0, &mut value, None, None)
+                .ok()?;
+            variant_to_u64(&value).map(|v| v != 0)
+        }
+    }
     /// Read all ACPI thermal zones in Celsius (`MSAcpi_ThermalZoneTemperature`, root\WMI).
     /// This is the known-good reference signal for calibration: it is a plain,
     /// documented WMI class, independent of Acer's packed format.

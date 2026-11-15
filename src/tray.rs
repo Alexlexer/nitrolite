@@ -38,6 +38,10 @@ const CMD_EXIT: usize = 200;
 static mut WMI: Option<AcerWmi> = None;
 static mut NVML: Option<Nvml> = None;
 static mut ICON_DATA: Option<NOTIFYICONDATAW> = None;
+/// Last observed power source; `None` until the first sample.
+static mut LAST_AC: Option<bool> = None;
+/// The mode to return to when AC power comes back.
+static mut PREFERRED_MODE: u8 = 1;
 
 fn mode_name(value: u8) -> &'static str {
     match value {
@@ -73,8 +77,38 @@ unsafe fn snapshot() -> (Option<f64>, Option<u32>, u8) {
     (cpu, gpu, mode)
 }
 
+/// Apply NitroSense's AC/DC rule: ECO on battery, the preferred mode on AC.
+unsafe fn follow_power_source(wmi: &AcerWmi, current_mode: u8) {
+    let Some(on_ac) = wmi.power_online() else {
+        return;
+    };
+
+    let previous = *std::ptr::addr_of!(LAST_AC);
+    let event = crate::power::classify(previous, on_ac);
+
+    if previous.is_some() {
+        // Remember what the user was running before battery took over.
+        if event == crate::power::Event::Unplugged && current_mode != crate::power::ECO {
+            PREFERRED_MODE = current_mode;
+        }
+
+        if let Some(target) = crate::power::mode_for(event, PREFERRED_MODE) {
+            let payload = ((target as u64) << 8) | 0x0B;
+            if wmi.set("SetGamingMiscSetting", payload).is_ok() {
+                std::thread::sleep(std::time::Duration::from_millis(400));
+            }
+        }
+    }
+
+    LAST_AC = Some(on_ac);
+}
+
 unsafe fn update_tooltip(hwnd: HWND) {
     let (cpu, gpu, mode) = snapshot();
+
+    if let Some(wmi) = (*std::ptr::addr_of!(WMI)).as_ref() {
+        follow_power_source(wmi, mode);
+    }
     let tip = format!(
         "nitrolite — {} | CPU {} | GPU {}",
         mode_name(mode),
@@ -100,6 +134,7 @@ unsafe fn apply_mode(hwnd: HWND, value: u8) {
     let Some(wmi) = (*std::ptr::addr_of!(WMI)).as_ref() else {
         return;
     };
+    PREFERRED_MODE = value;
     let current = match wmi.get("GetGamingMiscSetting", 0x0B) {
         Ok(raw) => ((raw >> 8) & 0xFF) as u8,
         Err(_) => return,
@@ -229,6 +264,14 @@ pub fn run(instance: &str) -> Result<(), String> {
     }
 
     unsafe {
+        // Seed from the current mode unless it is ECO, which is not a choice.
+        if let Ok(raw) = wmi.get("GetGamingMiscSetting", 0x0B) {
+            let current = ((raw >> 8) & 0xFF) as u8;
+            if current != crate::power::ECO {
+                PREFERRED_MODE = current;
+            }
+        }
+        LAST_AC = wmi.power_online();
         WMI = Some(wmi);
         NVML = Nvml::load().ok();
     }

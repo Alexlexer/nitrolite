@@ -863,6 +863,14 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
     let mut pending: Option<Pending> = None;
     let mut dirty = true;
 
+    // AC/DC follow: ECO on battery, the user's choice on AC.
+    let mut last_ac: Option<bool> = None;
+    let mut preferred: u8 = if data.mode == crate::power::ECO {
+        1
+    } else {
+        data.mode
+    };
+
     // Frame skipping: in slower modes many animation ticks quantise to the same
     // braille frame, and redrawing identical pixels is pure CPU.
     let mut previous: Option<(FanGrid, FanGrid)> = None;
@@ -959,6 +967,25 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
             let status = std::mem::take(&mut data.status);
             data = collect(Some(&data), wmi, nvml, &mut meter);
             data.status = status;
+
+            if let Some(on_ac) = wmi.power_online() {
+                let event = crate::power::classify(last_ac, on_ac);
+                if last_ac.is_some() {
+                    if event == crate::power::Event::Unplugged && data.mode != crate::power::ECO {
+                        preferred = data.mode;
+                    }
+                    if let Some(target) = crate::power::mode_for(event, preferred) {
+                        let payload = ((target as u64) << 8) | MODE_SELECTOR as u64;
+                        if wmi.set("SetGamingMiscSetting", payload).is_ok() {
+                            std::thread::sleep(Duration::from_millis(400));
+                            let status = std::mem::take(&mut data.status);
+                            data = collect(Some(&data), wmi, nvml, &mut meter);
+                            data.status = status;
+                        }
+                    }
+                }
+                last_ac = Some(on_ac);
+            }
             last_refresh = Instant::now();
             dirty = true;
         }

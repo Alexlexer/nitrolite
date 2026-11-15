@@ -2,6 +2,7 @@ mod acer;
 mod calib;
 mod elevate;
 mod nvml;
+mod power;
 mod sysinfo;
 mod tray;
 mod tui;
@@ -424,6 +425,9 @@ fn mode_value(name: &str) -> Option<u8> {
         "quiet" => Some(0),
         "balanced" => Some(1),
         "performance" => Some(4),
+        // ECO is normally applied automatically when the charger is removed,
+        // but it is a real mode and must be reachable when starting on battery.
+        "eco" => Some(crate::power::ECO),
         _ => None,
     }
 }
@@ -490,14 +494,13 @@ mod tests {
     }
 
     #[test]
-    fn unknown_and_automatic_modes_are_not_settable() {
-        // ECO is applied by the Acer service on adaptor change; it must not be
-        // reachable from the CLI.
-        assert_eq!(mode_value("eco"), None);
+    fn unknown_modes_are_rejected_but_eco_is_reachable() {
+        // ECO is applied automatically on battery, but it is a real mode and
+        // must be selectable when the machine starts unplugged.
+        assert_eq!(mode_value("eco"), Some(6));
         assert_eq!(mode_value("turbo"), None);
         assert_eq!(mode_value(""), None);
     }
-
     #[test]
     fn payload_packs_value_above_selector() {
         assert_eq!(mode_payload(0), 0x0000_0000_0000_000B);
