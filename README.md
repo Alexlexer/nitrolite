@@ -1,14 +1,14 @@
-# nitro
+# nitrolite
 
 A minimal replacement for Acer NitroSense on the Nitro ANV15-51 (and hopefully
 sibling models): talks straight to the Acer ACPI gaming interface instead of
 running an Electron app to do it.
 
-NitroSense on this machine: **~630 MB across 4 processes**. `nitro.exe`: **162 KB**.
+NitroSense on this machine: **~630 MB across 4 processes**. `nitrolite.exe`: **162 KB**.
 
 ```
 NitroSense  →  named pipe  →  AcerHardwareService (SYSTEM)  →  root\WMI  →  ACPI  →  EC
-nitro       ─────────────────────────────────────────────────→  root\WMI  →  ACPI  →  EC
+nitrolite       ─────────────────────────────────────────────────→  root\WMI  →  ACPI  →  EC
 ```
 
 ## Status
@@ -20,7 +20,7 @@ proved the Acer interface carries no thermal data (see below).
 Not yet: setters, UI, GPU temps. See [docs/PLAN.md](docs/PLAN.md).
 
 > **Do not uninstall NitroSense yet.** It is the reference implementation until
-> `nitro` reaches parity.
+> `nitrolite` reaches parity.
 
 ## Requirements
 
@@ -33,23 +33,23 @@ Not yet: setters, UI, GPU temps. See [docs/PLAN.md](docs/PLAN.md).
 
 ```powershell
 cargo build --release
-# -> target\release\nitro.exe
+# -> target\release\nitrolite.exe
 ```
 
 ## Usage
 
 ```powershell
-nitro tray                            # tray icon: temps in tooltip, mode menu
-nitro tui                             # terminal dashboard: temps + mode keys
-nitro status                          # raw values for all getters
-nitro temp                            # ACPI thermal zones + GPU temperature
-nitro mode                            # current operating mode
-nitro mode set quiet --dry-run        # show payload, write nothing
-nitro mode set performance            # write + verify (reverts on mismatch)
-nitro probe                           # sweep input selectors 0..0x20
-nitro raw GetGamingProfile 0          # single call, hex output
-nitro calibrate --seconds 90 --idle 20 --load
-nitro analyze captures\calib-*.jsonl  # which selectors actually move
+nitrolite tray                            # tray icon: temps in tooltip, mode menu
+nitrolite tui                             # terminal dashboard: temps + mode keys
+nitrolite status                          # raw values for all getters
+nitrolite temp                            # ACPI thermal zones + GPU temperature
+nitrolite mode                            # current operating mode
+nitrolite mode set quiet --dry-run        # show payload, write nothing
+nitrolite mode set performance            # write + verify (reverts on mismatch)
+nitrolite probe                           # sweep input selectors 0..0x20
+nitrolite raw GetGamingProfile 0          # single call, hex output
+nitrolite calibrate --seconds 90 --idle 20 --load
+nitrolite analyze captures\calib-*.jsonl  # which selectors actually move
 ```
 
 `tray`, `mode`, `temp` and `status` need elevation; `gpu`, `analyze` do not.
@@ -65,7 +65,7 @@ Acer interface changed. Temperatures therefore come from
 interface — and live fan RPM appears not to be exposed at all. See
 [docs/PROTOCOL.md §4.1](docs/PROTOCOL.md).
 
-Set `NITRO_INSTANCE` to override the default ACPI instance
+Set `NITROLITE_INSTANCE` to override the default ACPI instance
 (`ACPI\PNP0C14\APGe_0`) on a different model.
 
 ## Interface notes
@@ -99,5 +99,6 @@ docs/PROTOCOL.md  reverse-engineered protocol + captured samples
 ## License
 
 MIT
+
 
 

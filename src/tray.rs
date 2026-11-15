@@ -77,7 +77,7 @@ unsafe fn snapshot() -> (Option<f64>, Option<u32>, u8) {
 unsafe fn update_tooltip(hwnd: HWND) {
     let (cpu, gpu, mode) = snapshot();
     let tip = format!(
-        "nitro — {} | CPU {} | GPU {}",
+        "nitrolite — {} | CPU {} | GPU {}",
         mode_name(mode),
         cpu.map(|t| format!("{t:.0}C")).unwrap_or_else(|| "n/a".into()),
         gpu.map(|t| format!("{t}C")).unwrap_or_else(|| "n/a".into())
@@ -245,7 +245,7 @@ pub fn run(instance: &str) -> Result<(), String> {
         let hwnd = CreateWindowExW(
             WINDOW_EX_STYLE(0),
             class_name,
-            windows::core::w!("nitro"),
+            windows::core::w!("nitrolite"),
             WS_OVERLAPPED,
             0,
             0,
@@ -269,7 +269,7 @@ pub fn run(instance: &str) -> Result<(), String> {
             hIcon: icon,
             ..Default::default()
         };
-        let tip: Vec<u16> = "nitro — starting".encode_utf16().collect();
+        let tip: Vec<u16> = "nitrolite — starting".encode_utf16().collect();
         for (i, ch) in tip.iter().enumerate().take(TIP_MAX - 1) {
             nid.szTip[i] = *ch;
         }
@@ -299,6 +299,7 @@ pub fn run(instance: &str) -> Result<(), String> {
 
     Ok(())
 }
+
 
 
 

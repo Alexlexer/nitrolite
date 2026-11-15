@@ -101,7 +101,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nitro"
+name = "nitrolite"
 version = "0.1.0"
 dependencies = [
  "crossterm",

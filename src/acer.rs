@@ -329,3 +329,4 @@ fn variant_to_u64(v: &VARIANT) -> Option<u64> {
         }
     }
 }
+

@@ -1,4 +1,4 @@
-# nitro — Development Plan
+# nitrolite — Development Plan
 
 Replacement for Acer NitroSense: a small Rust tray app that talks directly to the
 Acer ACPI gaming interface instead of running a 630 MB Electron stack.
@@ -15,7 +15,7 @@ must come from `MSAcpi_ThermalZoneTemperature` (CPU) and NVML (GPU).
 | | |
 |---|---|
 | **Goal** | Full parity with the NitroSense features this laptop actually uses (fan mode, fan/thermal readout) at a fraction of the memory footprint. |
-| **Success metric** | NitroSense uninstalled, `nitro` resident memory measured and reported, fan control verified under sustained load with no thermal regression. |
+| **Success metric** | NitroSense uninstalled, `nitrolite` resident memory measured and reported, fan control verified under sustained load with no thermal regression. |
 | **Non-goals** | Per-key RGB and lightbar (this model reports `Lighting: false` for all zones), game library scanning, GPU overclocking, telemetry, cloud features, store integration. |
 
 ## 2. Where we are
@@ -26,7 +26,7 @@ must come from `MSAcpi_ThermalZoneTemperature` (CPU) and NVML (GPU).
 - Identified the live ACPI instance: `ACPI\PNP0C14\APGe_0`.
 - Enumerated all 25 methods and their parameter shapes.
 - Found the three quirks that block naive implementations (admin-only instance enumeration, `gmOutput` delivered as BSTR, `Put` wanting `VT_I4`).
-- Working Rust read path: `nitro.exe` (162 KB) returns values identical to the PowerShell ground truth.
+- Working Rust read path: `nitrolite.exe` (162 KB) returns values identical to the PowerShell ground truth.
 
 **Not done:** setters, UI, privilege model, decommissioning.
 
@@ -60,14 +60,14 @@ full 0–0xFF selector sweep found only a handful of valid selectors, and
 `GetGamingFanBehavior` answers with a pattern that tracks the *selector's bits*
 rather than any sensor. Details in [PROTOCOL.md §4.1](PROTOCOL.md).
 
-- [x] **M1 Calibration harness.** `nitro calibrate` samples every getter into
-      JSONL under optional load; `nitro analyze` reports which selectors move.
+- [x] **M1 Calibration harness.** `nitrolite calibrate` samples every getter into
+      JSONL under optional load; `nitrolite analyze` reports which selectors move.
 - [x] **M2 Real temperature sources.** CPU via `MSAcpi_ThermalZoneTemperature`
-      (`nitro temp`, verified 55→91 °C under load), GPU via NVML (`nitro gpu`,
+      (`nitrolite temp`, verified 55→91 °C under load), GPU via NVML (`nitrolite gpu`,
       verified against `nvidia-smi`).
 - [x] **M2b Mode mapping.** `GetGamingMiscSetting(0x0B)` is the operating mode:
       `0` Quiet, `1` Balanced, `4` Performance, `6` ECO (automatic on battery —
-      this model has no Turbo). `nitro mode` reports it. Established read-only,
+      this model has no Turbo). `nitrolite mode` reports it. Established read-only,
       by correlating user-driven switches with NitroSense's own log — no EC writes.
 - [x] **M2c Fan RPM verdict.** Unavailable: `GetGamingFanSpeed` is constant and
       selector-bit-driven, NVML reports `N/A`, no other getter exposes a
@@ -84,7 +84,7 @@ rather than any sensor. Details in [PROTOCOL.md §4.1](PROTOCOL.md).
 - [x] **M3 Setter primitives.** `SetGamingMiscSetting` with
       `gmInput = (value << 8) | selector`, input encoded as `VT_BSTR`.
       Verified: Quiet `0x0B` → status 0, read-back mode 0; Balanced `0x010B` →
-      mode 1. `nitro mode set <name> [--dry-run]`.
+      mode 1. `nitrolite mode set <name> [--dry-run]`.
 - [x] **M3b Read-back verification.** Every write re-reads the state word and
       compares; a mismatch triggers an automatic restore of the previous mode.
 - [ ] **M4 Failsafe hardening.** Still to do: restore on panic/`Drop`, and the
@@ -122,7 +122,7 @@ under option B.
       private. The gap is COM/WMI, the `windows` crate's static data, and NVML
       being loaded eagerly. Worth a pass later (`M6b`), but not worth blocking on
       — it is already a ~25× reduction.
-- [x] **M6c TUI.** `nitro tui` — live dashboard (mode, CPU zone, GPU), keys 1/2/3 to switch mode with read-back verification, q to quit. ASCII borders when stdout is not a console so redirected output stays readable.
+- [x] **M6c TUI.** `nitrolite tui` — live dashboard (mode, CPU zone, GPU), keys 1/2/3 to switch mode with read-back verification, q to quit. ASCII borders when stdout is not a console so redirected output stays readable.
 - [ ] **M7 Small window.** Live temps + fan RPM, mode buttons, fan curve editor
       (custom table via `SetGamingFanTable`) only if M2 makes the table
       interpretable.
@@ -182,7 +182,7 @@ incident, no manual intervention needed.
 ## 8. Repo layout
 
 ```
-nitro/
+nitrolite/
 ├── Cargo.toml
 ├── docs/
 │   ├── PLAN.md          # this file
@@ -194,4 +194,5 @@ nitro/
 ├── captures/            # raw calibration captures (gitignored)
 └── fixtures/            # trimmed captures used by unit tests (committed)
 ```
+
 

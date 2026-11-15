@@ -1,4 +1,4 @@
-//! Terminal dashboard (`nitro tui`).
+//! Terminal dashboard (`nitrolite tui`).
 //!
 //! Deliberately hand-drawn with crossterm rather than ratatui: the drawing code
 //! is ~100 lines and the dependency is one crate, which suits a tool whose whole
@@ -88,7 +88,7 @@ fn render(data: &Data, width: usize) -> Vec<String> {
 
     let mut lines = Vec::new();
     lines.push(format!("{tl}{bar}{tr}"));
-    lines.push(row(" nitro - Acer ACPI".to_string()));
+    lines.push(row(" nitrolite - Acer ACPI".to_string()));
 
     let cpu = data
         .zones
@@ -267,5 +267,6 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
         }
     }
 }
+
 
 

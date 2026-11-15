@@ -19,14 +19,14 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let cmd = args.first().map(String::as_str).unwrap_or("status");
     let instance =
-        std::env::var("NITRO_INSTANCE").unwrap_or_else(|_| DEFAULT_INSTANCE.to_string());
+        std::env::var("NITROLITE_INSTANCE").unwrap_or_else(|_| DEFAULT_INSTANCE.to_string());
 
     // `analyze` works on a file and needs no hardware access.
     if cmd == "analyze" {
         let path = match args.get(1) {
             Some(p) => p,
             None => {
-                eprintln!("usage: nitro analyze <capture.jsonl>");
+                eprintln!("usage: nitrolite analyze <capture.jsonl>");
                 std::process::exit(2);
             }
         };
@@ -131,12 +131,12 @@ fn main() {
                 set_mode(&wmi, name, dry_run)
             }
             Some(other) => Err(format!(
-                "unknown mode subcommand {other}; usage: nitro mode [set <quiet|balanced|performance> [--dry-run]]"
+                "unknown mode subcommand {other}; usage: nitrolite mode [set <quiet|balanced|performance> [--dry-run]]"
             )),
         },
         other => {
             eprintln!("unknown command: {other}");
-            eprintln!("usage: nitro [status|probe|raw|calibrate|analyze]");
+            eprintln!("usage: nitrolite [status|probe|raw|calibrate|analyze]");
             std::process::exit(2);
         }
     };
@@ -192,7 +192,7 @@ fn parse_calib_opts(args: &[String]) -> CalibOpts {
             }
             "--load" => opts.load = true,
             "--help" | "-h" => {
-                println!("nitro calibrate [--seconds N] [--idle N] [--interval-ms N] [--selectors N] [--load] [--out FILE]");
+                println!("nitrolite calibrate [--seconds N] [--idle N] [--interval-ms N] [--selectors N] [--load] [--out FILE]");
                 std::process::exit(0);
             }
             other => {
@@ -452,3 +452,4 @@ fn parse_num(s: &str) -> Option<u32> {
         s.parse().ok()
     }
 }
+

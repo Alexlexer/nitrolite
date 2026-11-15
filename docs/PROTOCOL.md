@@ -192,7 +192,7 @@ setDataWithoutScenario: OPERATING_MODE,v:6
 That matches `"ACDCModeSet": true` in `win32\Nitro\Nitro ANV15-51.json`: pick up
 the charger or drop to battery and the mode changes itself. Any replacement must
 either reproduce this or explicitly opt out — leaving it unimplemented means the
-OS/EC will still switch underneath us and `nitro mode` will report ECO.
+OS/EC will still switch underneath us and `nitrolite mode` will report ECO.
 
 All `OPERATING_MODE` values across the log's history are drawn from
 `{0, 1, 4, 6}` — three user-selectable modes plus ECO.
@@ -271,7 +271,7 @@ Confirmed by writing the operating mode:
 | Balanced (1) | `0x000000000000010B` | status 0, read-back → mode 1 ✅ |
 
 The write is verified end-to-end: after writing, re-read `GetGamingMiscSetting(0x0B)`
-and compare. `nitro mode set` does exactly that and restores the previous mode if
+and compare. `nitrolite mode set` does exactly that and restores the previous mode if
 the read-back disagrees.
 
 `ECO` (6) is deliberately not settable: it is applied by the Acer service on
@@ -310,7 +310,7 @@ $i = Get-CimInstance -Namespace root\WMI -ClassName AcerGamingFunction
 Invoke-CimMethod -InputObject $i -MethodName GetGamingProfile -Arguments @{ gmInput = [uint32]0 }
 
 # or via the Rust client
-nitro status
+nitrolite status
 ```
 
 
@@ -320,7 +320,7 @@ Raw captures and string dumps are in `C:\DEV\nitro-re\` on the analysis machine
 (`strings-node.txt`, `sweep.log`, `instance-probe.log`, `status.out`,
 `stack-independence.txt`). Not part of the repo.
 
-## 10. Dependency map — what `nitro` actually needs
+## 10. Dependency map — what `nitrolite` actually needs
 
 Verified by stopping things and re-running reads and writes:
 
@@ -336,5 +336,6 @@ Verified by stopping things and re-running reads and writes:
 The Store app is a **client** of the interface we talk to, not a provider of it.
 Uninstalling NitroSense cannot remove a firmware ACPI device; uninstalling the
 Acer *drivers* might.
+
 
 

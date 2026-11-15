@@ -139,3 +139,4 @@ impl Drop for Nvml {
         }
     }
 }
+
