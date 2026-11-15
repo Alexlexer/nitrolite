@@ -1,6 +1,6 @@
 [package]
 name = "nitrolite"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 description = "Minimal replacement for Acer NitroSense: direct ACPI/WMI fan + thermal control"
 license = "MIT"
@@ -31,6 +31,7 @@ crossterm = "0.28"
 [[bin]]
 name = "nitrolite"
 path = "src/main.rs"
+
 
 
 
