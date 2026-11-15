@@ -15,13 +15,12 @@ use windows::Win32::UI::Shell::{
     NOTIFYICONDATAW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    WINDOW_EX_STYLE,
     AppendMenuW, CheckMenuItem, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu,
     DestroyWindow, DispatchMessageW, GetCursorPos, GetMessageW, LoadIconW, PostMessageW,
     PostQuitMessage, RegisterClassW, SetForegroundWindow, SetTimer, TrackPopupMenu,
     TranslateMessage, HICON, IDI_APPLICATION, MF_BYCOMMAND, MF_CHECKED, MF_SEPARATOR, MF_STRING,
-    MSG, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_APP, WM_CLOSE, WM_DESTROY, WM_NULL, WM_RBUTTONUP,
-    WM_TIMER, WNDCLASSW, WS_OVERLAPPED,
+    MSG, TPM_RETURNCMD, TPM_RIGHTBUTTON, WINDOW_EX_STYLE, WM_APP, WM_CLOSE, WM_DESTROY, WM_NULL,
+    WM_RBUTTONUP, WM_TIMER, WNDCLASSW, WS_OVERLAPPED,
 };
 
 use crate::acer::AcerWmi;
@@ -79,7 +78,8 @@ unsafe fn update_tooltip(hwnd: HWND) {
     let tip = format!(
         "nitrolite — {} | CPU {} | GPU {}",
         mode_name(mode),
-        cpu.map(|t| format!("{t:.0}C")).unwrap_or_else(|| "n/a".into()),
+        cpu.map(|t| format!("{t:.0}C"))
+            .unwrap_or_else(|| "n/a".into()),
         gpu.map(|t| format!("{t}C")).unwrap_or_else(|| "n/a".into())
     );
 
@@ -134,7 +134,12 @@ unsafe fn show_menu(hwnd: HWND) {
 
     let _ = AppendMenuW(menu, MF_STRING, CMD_QUIET, windows::core::w!("Quiet"));
     let _ = AppendMenuW(menu, MF_STRING, CMD_BALANCED, windows::core::w!("Balanced"));
-    let _ = AppendMenuW(menu, MF_STRING, CMD_PERFORMANCE, windows::core::w!("Performance"));
+    let _ = AppendMenuW(
+        menu,
+        MF_STRING,
+        CMD_PERFORMANCE,
+        windows::core::w!("Performance"),
+    );
 
     let active = match mode_name(mode) {
         "Quiet" => CMD_QUIET,
@@ -258,7 +263,8 @@ pub fn run(instance: &str) -> Result<(), String> {
         )
         .map_err(|e| format!("CreateWindowExW: {e}"))?;
 
-        let icon: HICON = LoadIconW(HINSTANCE(std::ptr::null_mut()), IDI_APPLICATION).unwrap_or_default();
+        let icon: HICON =
+            LoadIconW(HINSTANCE(std::ptr::null_mut()), IDI_APPLICATION).unwrap_or_default();
 
         let mut nid = NOTIFYICONDATAW {
             cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
@@ -299,7 +305,3 @@ pub fn run(instance: &str) -> Result<(), String> {
 
     Ok(())
 }
-
-
-
-

@@ -162,7 +162,7 @@ fn render(data: &Data, width: usize, compact: bool) -> Vec<String> {
     };
 
     let inner = width.saturating_sub(2);
-    let bar: String = std::iter::repeat(h).take(inner).collect();
+    let bar: String = std::iter::repeat_n(h, inner).collect();
 
     let row = |segs: &[(&str, &str)]| {
         let used = visible(segs);
@@ -208,9 +208,7 @@ fn render(data: &Data, width: usize, compact: bool) -> Vec<String> {
         data.gpu
             .map(|t| format!("{t} C"))
             .unwrap_or_else(|| "n/a".to_string()),
-        data.gpu
-            .map(|t| temp_style(t as f64))
-            .unwrap_or("90"),
+        data.gpu.map(|t| temp_style(t as f64)).unwrap_or("90"),
     ));
     if !compact {
         rows.push(("GPU name".to_string(), data.gpu_name.clone(), "90"));
@@ -242,7 +240,10 @@ fn render(data: &Data, width: usize, compact: bool) -> Vec<String> {
         ("   [3] ", "1;36"),
         ("Performance", "33"),
     ]));
-    lines.push(row(&[("  [r] refresh", "90"), ("              [q] quit", "90")]));
+    lines.push(row(&[
+        ("  [r] refresh", "90"),
+        ("              [q] quit", "90"),
+    ]));
 
     if !data.status.is_empty() {
         if !compact {
@@ -263,7 +264,7 @@ fn render(data: &Data, width: usize, compact: bool) -> Vec<String> {
 
 fn draw(out: &mut impl Write, data: &Data) -> io::Result<()> {
     let (cols, rows) = crossterm::terminal::size().unwrap_or((60, 20));
-    let width = (cols as usize).min(66).max(34);
+    let width = (cols as usize).clamp(34, 66);
     let height = rows as usize;
 
     let mut lines = render(data, width, false);
@@ -385,7 +386,9 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
             {
                 match code {
                     KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                    KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => return Ok(()),
+                    KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                        return Ok(())
+                    }
                     KeyCode::Char('1') => {
                         data.status = apply_mode(wmi, 0);
                         last_refresh = Instant::now() - Duration::from_secs(5);
@@ -416,5 +419,47 @@ pub fn run(wmi: &AcerWmi, nvml: Option<&Nvml>) -> Result<(), String> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
 
+    #[test]
+    fn temperature_thresholds_pick_the_right_colour() {
+        assert_eq!(temp_style(50.0), "32");
+        assert_eq!(temp_style(69.9), "32");
+        assert_eq!(temp_style(70.0), "33");
+        assert_eq!(temp_style(84.9), "33");
+        assert_eq!(temp_style(85.0), "1;31");
+    }
 
+    #[test]
+    fn modes_have_stable_names_and_colours() {
+        assert_eq!(mode_name(0), "Quiet");
+        assert_eq!(mode_name(1), "Balanced");
+        assert_eq!(mode_name(4), "Performance");
+        assert_eq!(mode_name(6), "ECO (battery)");
+        assert_eq!(mode_name(9), "Unknown");
+        assert_eq!(mode_style(1), "1;32");
+    }
+
+    #[test]
+    fn sparkline_needs_two_samples_and_bounds_its_width() {
+        let mut history = VecDeque::new();
+        assert!(
+            sparkline(&history, 10).is_empty(),
+            "one sample is not a trend"
+        );
+        history.push_back(50.0);
+        assert!(sparkline(&history, 10).is_empty());
+
+        for v in [55.0, 60.0, 70.0, 85.0] {
+            history.push_back(v);
+        }
+        assert_eq!(sparkline(&history, 10).chars().count(), history.len());
+        assert_eq!(
+            sparkline(&history, 2).chars().count(),
+            2,
+            "must respect width"
+        );
+    }
+}

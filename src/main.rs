@@ -405,6 +405,12 @@ fn gpu_report() -> Result<(), String> {
 
 const MISC_MODE_SELECTOR: u64 = 0x0B;
 
+/// Setter payload layout: value in the high byte, selector in the low byte.
+/// Confirmed against the hardware in M3 (0x010B → Balanced).
+fn mode_payload(value: u8) -> u64 {
+    ((value as u64) << 8) | MISC_MODE_SELECTOR
+}
+
 fn read_mode(wmi: &AcerWmi) -> Result<u8, String> {
     let raw = wmi.get("GetGamingMiscSetting", MISC_MODE_SELECTOR as u32)?;
     Ok(((raw >> 8) & 0xFF) as u8)
@@ -422,9 +428,8 @@ fn mode_value(name: &str) -> Option<u8> {
 }
 
 fn set_mode(wmi: &AcerWmi, name: &str, dry_run: bool) -> Result<(), String> {
-    let value = mode_value(name).ok_or_else(|| {
-        format!("unknown mode '{name}'; known: quiet, balanced, performance")
-    })?;
+    let value = mode_value(name)
+        .ok_or_else(|| format!("unknown mode '{name}'; known: quiet, balanced, performance"))?;
 
     let current = read_mode(wmi)?;
     println!("current mode: {current} ({})", mode_name(current));
@@ -434,10 +439,8 @@ fn set_mode(wmi: &AcerWmi, name: &str, dry_run: bool) -> Result<(), String> {
     }
 
     // Setters pack (value << 8) | selector, mirroring the getter output layout.
-    let payload = ((value as u64) << 8) | MISC_MODE_SELECTOR;
-    println!(
-        "payload: 0x{payload:016X}  (selector 0x{MISC_MODE_SELECTOR:02X}, value {value})"
-    );
+    let payload = mode_payload(value);
+    println!("payload: 0x{payload:016X}  (selector 0x{MISC_MODE_SELECTOR:02X}, value {value})");
 
     if dry_run {
         println!("dry run: nothing written");
@@ -474,4 +477,53 @@ fn parse_num(s: &str) -> Option<u32> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
 
+    #[test]
+    fn known_modes_map_to_their_words() {
+        assert_eq!(mode_value("quiet"), Some(0));
+        assert_eq!(mode_value("BALANCED"), Some(1));
+        assert_eq!(mode_value("Performance"), Some(4));
+    }
+
+    #[test]
+    fn unknown_and_automatic_modes_are_not_settable() {
+        // ECO is applied by the Acer service on adaptor change; it must not be
+        // reachable from the CLI.
+        assert_eq!(mode_value("eco"), None);
+        assert_eq!(mode_value("turbo"), None);
+        assert_eq!(mode_value(""), None);
+    }
+
+    #[test]
+    fn payload_packs_value_above_selector() {
+        assert_eq!(mode_payload(0), 0x0000_0000_0000_000B);
+        assert_eq!(mode_payload(1), 0x0000_0000_0000_010B);
+        assert_eq!(mode_payload(4), 0x0000_0000_0000_040B);
+    }
+
+    #[test]
+    fn word_decodes_status_and_value() {
+        let ok = Word(0x0000_0000_0000_6400);
+        assert_eq!(ok.status(), 0);
+        assert_eq!(ok.value(), 100);
+        assert!(ok.ok());
+
+        let unsupported = Word(0x0000_0000_0000_0002);
+        assert_eq!(unsupported.status(), 2);
+        assert!(
+            !unsupported.ok(),
+            "non-zero status must never read as a value"
+        );
+    }
+
+    #[test]
+    fn parse_num_accepts_decimal_and_hex() {
+        assert_eq!(parse_num("42"), Some(42));
+        assert_eq!(parse_num("0x2A"), Some(42));
+        assert_eq!(parse_num("0X2a"), Some(42));
+        assert_eq!(parse_num("nope"), None);
+    }
+}

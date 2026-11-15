@@ -6,7 +6,7 @@
 
 use std::ffi::c_void;
 
-use windows::core::{PCSTR, PCWSTR, HSTRING};
+use windows::core::{HSTRING, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{FreeLibrary, HMODULE};
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 
@@ -93,14 +93,14 @@ impl Nvml {
             }
 
             let mut name_buf = [0i8; 96];
-            let name = if unsafe { (self.fns.name)(device, name_buf.as_mut_ptr(), 96) } == NVML_SUCCESS
-            {
-                unsafe { std::ffi::CStr::from_ptr(name_buf.as_ptr()) }
-                    .to_string_lossy()
-                    .into_owned()
-            } else {
-                format!("GPU {index}")
-            };
+            let name =
+                if unsafe { (self.fns.name)(device, name_buf.as_mut_ptr(), 96) } == NVML_SUCCESS {
+                    unsafe { std::ffi::CStr::from_ptr(name_buf.as_ptr()) }
+                        .to_string_lossy()
+                        .into_owned()
+                } else {
+                    format!("GPU {index}")
+                };
 
             let mut temp = 0u32;
             let temp_c = if unsafe { (self.fns.temp)(device, NVML_TEMPERATURE_GPU, &mut temp) }
@@ -139,4 +139,3 @@ impl Drop for Nvml {
         }
     }
 }
-

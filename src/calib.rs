@@ -58,8 +58,7 @@ pub struct CalibOpts {
 }
 
 pub fn run(wmi: &AcerWmi, opts: &CalibOpts) -> Result<(), String> {
-    let file = File::create(&opts.out)
-        .map_err(|e| format!("cannot create {}: {e}", opts.out))?;
+    let file = File::create(&opts.out).map_err(|e| format!("cannot create {}: {e}", opts.out))?;
     let mut out = BufWriter::new(file);
 
     let stop = Arc::new(AtomicBool::new(false));
@@ -73,7 +72,10 @@ pub fn run(wmi: &AcerWmi, opts: &CalibOpts) -> Result<(), String> {
 
     println!(
         "capturing {}s ({}s idle, {}s load) -> {}",
-        opts.seconds, opts.idle_seconds, opts.seconds.saturating_sub(opts.idle_seconds), opts.out
+        opts.seconds,
+        opts.idle_seconds,
+        opts.seconds.saturating_sub(opts.idle_seconds),
+        opts.out
     );
 
     while start.elapsed() < Duration::from_secs(opts.seconds) {
@@ -86,7 +88,10 @@ pub fn run(wmi: &AcerWmi, opts: &CalibOpts) -> Result<(), String> {
             let threads = std::thread::available_parallelism()
                 .map(|n| n.get())
                 .unwrap_or(4);
-            println!("  [{}s] load on ({threads} threads)", start.elapsed().as_secs());
+            println!(
+                "  [{}s] load on ({threads} threads)",
+                start.elapsed().as_secs()
+            );
             for _ in 0..threads {
                 let flag = stop.clone();
                 burners.push(std::thread::spawn(move || {
@@ -130,7 +135,8 @@ pub fn run(wmi: &AcerWmi, opts: &CalibOpts) -> Result<(), String> {
             r: readings,
         };
         serde_json::to_writer(&mut out, &row).map_err(|e| format!("write failed: {e}"))?;
-        out.write_all(b"\n").map_err(|e| format!("write failed: {e}"))?;
+        out.write_all(b"\n")
+            .map_err(|e| format!("write failed: {e}"))?;
         rows += 1;
 
         next += interval;
@@ -169,7 +175,11 @@ pub fn analyze(path: &str) -> Result<(), String> {
     }
 
     println!("capture: {path}");
-    println!("rows: {}  duration: {}ms\n", rows.len(), rows.last().map(|r| r.t).unwrap_or(0));
+    println!(
+        "rows: {}  duration: {}ms\n",
+        rows.len(),
+        rows.last().map(|r| r.t).unwrap_or(0)
+    );
 
     // Thermal zones first: this is the known-good reference signal.
     let tz_min = rows
@@ -181,7 +191,10 @@ pub fn analyze(path: &str) -> Result<(), String> {
         .flat_map(|r| r.tz.iter().copied())
         .fold(f64::NEG_INFINITY, f64::max);
     if tz_min.is_finite() {
-        println!("ACPI thermal zone: {tz_min:.1} C -> {tz_max:.1} C (delta {:.1} C)\n", tz_max - tz_min);
+        println!(
+            "ACPI thermal zone: {tz_min:.1} C -> {tz_max:.1} C (delta {:.1} C)\n",
+            tz_max - tz_min
+        );
     } else {
         println!("ACPI thermal zone: no readings\n");
     }
@@ -195,7 +208,10 @@ pub fn analyze(path: &str) -> Result<(), String> {
         }
     }
 
-    println!("{:<24} {:>3}  {:>6}  {:>18}  {:>18}  {}", "method", "sel", "uniq", "idle raw", "load raw", "verdict");
+    println!(
+        "{:<24} {:>3}  {:>6}  {:>18}  {:>18}  verdict",
+        "method", "sel", "uniq", "idle raw", "load raw"
+    );
     for ((method, sel), readings) in &groups {
         let uniq: std::collections::BTreeSet<&str> =
             readings.iter().map(|r| r.raw.as_str()).collect();
@@ -224,3 +240,32 @@ pub fn analyze(path: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capture_row_round_trips_through_json() {
+        let row = Row {
+            t: 1234,
+            phase: "load".to_string(),
+            tz: vec![55.5, 48.0],
+            r: vec![Reading {
+                m: "GetGamingSysInfo".to_string(),
+                sel: 0,
+                raw: "0x0000000227000000".to_string(),
+                status: 0,
+                value: 0,
+            }],
+        };
+
+        let text = serde_json::to_string(&row).expect("serialise");
+        let back: Row = serde_json::from_str(&text).expect("deserialise");
+
+        assert_eq!(back.t, 1234);
+        assert_eq!(back.phase, "load");
+        assert_eq!(back.tz, vec![55.5, 48.0]);
+        assert_eq!(back.r.len(), 1);
+        assert_eq!(back.r[0].raw, "0x0000000227000000");
+    }
+}

@@ -38,9 +38,8 @@ impl AcerWmi {
         unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
 
-            let locator: IWbemLocator =
-                CoCreateInstance(&WbemLocator, None, CLSCTX_INPROC_SERVER)
-                    .map_err(|e| format!("CoCreateInstance(WbemLocator): {e}"))?;
+            let locator: IWbemLocator = CoCreateInstance(&WbemLocator, None, CLSCTX_INPROC_SERVER)
+                .map_err(|e| format!("CoCreateInstance(WbemLocator): {e}"))?;
 
             let services = locator
                 .ConnectServer(
@@ -91,12 +90,7 @@ impl AcerWmi {
 
             let mut in_sig: Option<IWbemClassObject> = None;
             class
-                .GetMethod(
-                    &BSTR::from(method),
-                    0,
-                    &mut in_sig,
-                    null_mut(),
-                )
+                .GetMethod(&BSTR::from(method), 0, &mut in_sig, null_mut())
                 .map_err(|e| format!("GetMethod({method}): {e}"))?;
             let in_sig =
                 in_sig.ok_or_else(|| format!("method {method} has no in-parameter class"))?;
@@ -140,7 +134,7 @@ impl AcerWmi {
             match variant_to_u64(&out) {
                 Some(v) => Ok(v),
                 None => {
-                    let vt = (*out.as_raw()).Anonymous.Anonymous.vt;
+                    let vt = out.as_raw().Anonymous.Anonymous.vt;
                     Err(format!(
                         "gmOutput vt={vt} (unhandled); out params:{}",
                         dump_props(&out_params)
@@ -239,7 +233,10 @@ impl AcerWmi {
                 .map_err(|e| format!("Get(gmOutput): {e}"))?;
 
             let status = variant_to_u64(&out).unwrap_or(0) as u32;
-            Ok(SetResult { encoding: label, status })
+            Ok(SetResult {
+                encoding: label,
+                status,
+            })
         }
     }
 }
@@ -269,7 +266,10 @@ fn put_input(in_params: &IWbemClassObject, input: u64) -> Result<String, String>
             Err(e) => errs.push(format!("{label}: {e}")),
         }
     }
-    Err(format!("all VARIANT encodings rejected: {}", errs.join("; ")))
+    Err(format!(
+        "all VARIANT encodings rejected: {}",
+        errs.join("; ")
+    ))
 }
 
 fn dump_props(obj: &IWbemClassObject) -> String {
@@ -286,7 +286,7 @@ fn dump_props(obj: &IWbemClassObject) -> String {
             if obj.Next(0, &mut name, &mut val, &mut ty, &mut fl).is_err() || name.is_empty() {
                 break;
             }
-            let vt = (*val.as_raw()).Anonymous.Anonymous.vt;
+            let vt = val.as_raw().Anonymous.Anonymous.vt;
             out.push_str(&format!(" {name}(vt={vt},ty={ty})"));
         }
         let _ = obj.EndEnumeration();
@@ -297,12 +297,12 @@ fn dump_props(obj: &IWbemClassObject) -> String {
 fn variant_to_u64(v: &VARIANT) -> Option<u64> {
     unsafe {
         let raw = v.as_raw();
-        let vt = (*raw).Anonymous.Anonymous.vt;
+        let vt = raw.Anonymous.Anonymous.vt;
 
         // The ACPI WMI mapper stringifies uint64 out-params: VT_BSTR with CIM type UINT64.
         if vt == 8 {
             // bstrVal is a raw *const u16 pointer in windows-core's union.
-            let ptr = (*raw).Anonymous.Anonymous.Anonymous.bstrVal;
+            let ptr = raw.Anonymous.Anonymous.Anonymous.bstrVal;
             if ptr.is_null() {
                 return None;
             }
@@ -319,14 +319,13 @@ fn variant_to_u64(v: &VARIANT) -> Option<u64> {
         }
 
         match vt {
-            2 => Some((*raw).Anonymous.Anonymous.Anonymous.iVal as u64),
-            3 => Some((*raw).Anonymous.Anonymous.Anonymous.lVal as u64),
-            18 => Some((*raw).Anonymous.Anonymous.Anonymous.uiVal as u64),
-            19 => Some((*raw).Anonymous.Anonymous.Anonymous.ulVal as u64),
-            20 => Some((*raw).Anonymous.Anonymous.Anonymous.llVal as u64),
-            21 => Some((*raw).Anonymous.Anonymous.Anonymous.ullVal),
+            2 => Some(raw.Anonymous.Anonymous.Anonymous.iVal as u64),
+            3 => Some(raw.Anonymous.Anonymous.Anonymous.lVal as u64),
+            18 => Some(raw.Anonymous.Anonymous.Anonymous.uiVal as u64),
+            19 => Some(raw.Anonymous.Anonymous.Anonymous.ulVal as u64),
+            20 => Some(raw.Anonymous.Anonymous.Anonymous.llVal as u64),
+            21 => Some(raw.Anonymous.Anonymous.Anonymous.ullVal),
             _ => None,
         }
     }
 }
-
