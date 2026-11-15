@@ -1,0 +1,9 @@
+# Normalize line endings; keep diffs stable across Windows checkouts.
+* text=auto eol=lf
+
+*.rs    text
+*.toml  text
+*.md    text
+*.ps1   text
+*.exe   binary
+*.pdb   binary
